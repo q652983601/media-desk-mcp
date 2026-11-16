@@ -33,3 +33,26 @@
 - Kimi 的完整 OS 沙箱；ACP manual 模式和拒绝 reverse RPC 不能保证全部本地文件操作都被隔离。
 
 `expectedRevision` 保护外部完整稿件与附件写入；原 UI 的普通 patch 操作不具有全局 CAS。stdio/HTTP MCP 的工具结果成功也不保证外部平台动作已完成，因为本版不执行社交平台发布。
+
+
+## CLI 配置候选增量（2026-11-16）
+
+增加四种 CLI 的网页配置、持久化、即时应用以及 Claude/MiniMax 结构化适配。新增回归覆盖完整结果提取、stdin、提供方环境隔离、配置冲突、无效配置、重启持久化、安装检测和原模型选择器即时更新。历史 148 项和云 CI 记录对应原 0.1.0 基线，本候选的本机检查与浏览器结果在部署 runtime 中记录。实际模型调用待验。
+
+本机 Node 22.23.1 检查通过 153/153 项测试、构建和 51 文件完整性检查。测试使用 SSD 上的 TMPDIR，避免 macOS 临时目录符号链接影响路径断言。ego-browser 实测配置入口、四种 CLI 安装状态、启用后保存、重新打开、原模型选择器出现四个提供方，以及 Claude/Codex 选择持久化。当前本机配置启用了四种 CLI，默认选择 Codex 的 default 模型。
+
+
+## Magpie provider 候选增量（2026-11-16）
+
+本机 Magpie 0.1.4322 的 `/api/hello` 和 `/v1/models` 已实际返回成功，原目录 36 项。工作台读取并过滤非文字输出后，提供 32 个写作模型与路由组。ego-browser 已验证模型查询、搜索、下拉选择、元数据提供的推理强度、保存和重新打开。当前本机工作台选中 `group/kimi-write`，推理强度跟随模型默认。
+
+本机 Node 22.23.1 使用 SSD TMPDIR 跑过 159/159 项测试，前端构建与 51 文件完整性检查通过。新增回归覆盖目录流式大小限制、异常清理、凭据隐藏、跨 origin 凭据隔离、版本冲突、重启持久化、Chat Completions 请求映射、推理强度与在途配置保护。真实模型生成尚未验证。
+
+
+## 本机原生 runtime 配置（2026-11-16）
+
+当前 Mac 助手选择为 Kimi CLI / kimi-code/k3.1-pro。Kimi、Codex 和 MiniMax mmx 的真实本机 CLI 测试均返回 runtime-ok。通过正常 POST /media-desk/chat 入口发起的连通性验证返回 engine=kimi-code/k3.1-pro、modelOk=true 和「本机 Kimi CLI 已连接」，灵感/内容 items 的哈希一致。
+
+隔离服务继承的 Kimi 转发环境后，Claude 原生 auth status 返回 loggedIn=false。该 CLI 的路径与原生模型选项已配置，当前为待登录状态。163 项本机回归、前端构建和 51 文件完整性检查通过，覆盖原生环境处理、助手选择验证以及新旧 Kimi ACP 模型接口。
+
+Magpie 的 Kimi 默认已通过官方 default 命令恢复为原生 kimi-code/k3.1-pro，Codex 保持其原生 gpt-6.1-sol 配置。Kimi/Codex 的选择菜单按各自提供方收窄。配置前的 Magpie profile 为 media-desk-before-native-20261116-2158，运行证据位于本机 Media Desk runtime。

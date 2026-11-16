@@ -68,12 +68,28 @@ npm start
 
 MCP 暴露 **17 个工具、3 个资源**，包括灵感、完整稿件、图片上传/挂载、排期、状态、表现数据、风格、规则、复盘和导出。完整 API 以工具发现结果和 [接口文档](docs/MCP.md) 为准。
 
-## 在原界面内选择 Codex / Kimi
+## 接入 Magpie 并选择模型
 
-先在**运行工作台的同一台机器、同一系统用户**下安装并登录对应官方 CLI，然后在 `.env` 中显式启用：
+打开「设置」→「配置 Magpie 模型与 CLI」→「Magpie 网关」。本机默认地址为 `http://127.0.0.1:3425/v1`。点击「读取 / 刷新模型」，从当前网关的文字模型与路由组中搜索、选择写作模型。模型声明支持推理强度时，可选择其提供的级别。启用后点击「保存并应用」，助手和成稿使用选定的 Magpie 模型。
+
+Magpie 管理提供方、账号和模型路由。工作台通过 `GET /v1/models` 读取当前目录，通过 `POST /v1/chat/completions` 发送文本请求。模型目录中明确声明输出为图片或视频的条目会从写作选择器中过滤。模型查询成功后仍需单独验证实际生成。
+
+网关连接、目录和选中模型保存在服务数据目录的 `magpie.json`。填写的网关密钥保存在该私有文件中，网页只接收密钥是否已保存。更换网关 origin 时，需要重新填写密钥。首次环境配置可使用 `MEDIA_DESK_MAGPIE_URL`、`MEDIA_DESK_MAGPIE_TOKEN`、`MEDIA_DESK_MAGPIE_MODEL` 和 `MEDIA_DESK_MAGPIE_ENABLED=1`，网页保存后的配置优先。
+
+Magpie 原接口与配置说明见 [官方接入文档](https://usemagpie.ai/docs/integrate)。
+
+## 在设置中配置 CLI 工具
+
+打开「设置」→「配置 Magpie 模型与 CLI」→「本机 CLI」，填写可执行文件路径、启用状态和模型列表，点击「保存并应用」。配置立即生效，顶栏「助手模型」显示启用的 CLI 及其模型。模型 ID 用英文逗号分隔，`default` 沿用 CLI 默认。
+
+安装检测会检查服务机器上的可执行文件。账号登录与实际生成需在同一系统用户下验证。MiniMax 通过 `mmx text chat` 使用已有 MiniMax 登录或凭据配置。配置存放在数据目录的 `cli.json` 中，保存采用版本冲突检查，CLI 正在生成时需等待完成或取消。
+
+「本机 CLI」可设置各入口的「原生 runtime」，并选择「助手默认 runtime」和「助手默认模型」。原生模式下，Claude 使用 CLI 自身的登录，服务进程继承的跨提供方 Anthropic 转发地址和凭据会从子进程环境移除。MiniMax 沿用其本机凭据与区域配置。Codex、Kimi、MiniMax 各自通过安装的本机 CLI 执行，Kimi 同时适配当前 ACP configOptions 模型选择接口。
+
+也可以在 `.env` 中设置初始值，网页保存后的配置优先：
 
 ```dotenv
-MEDIA_DESK_AGENTS=codex,kimi
+MEDIA_DESK_AGENTS=codex,claude,kimi,minimax
 # 不在 PATH 时指定可执行文件的绝对路径
 # MEDIA_DESK_CODEX_COMMAND=/absolute/path/to/codex
 # MEDIA_DESK_KIMI_COMMAND=/absolute/path/to/kimi
@@ -82,9 +98,9 @@ MEDIA_DESK_AGENTS=codex,kimi
 # MEDIA_DESK_KIMI_MODELS=default
 ```
 
-重启服务，原模型选择器会出现配置的提供方和型号。运行时用官方 CLI 自己的账号状态，不复制登录凭据，不自动开通订阅，也不把浏览器会员登录变成 API Key。检测到 CLI 只代表程序存在，真实账号和生成能力尚需实际调用验证。
+使用环境变量设置初始值后重启服务，原模型选择器会出现配置的提供方和型号。运行时用官方 CLI 自己的账号状态，不复制登录凭据，不自动开通订阅，也不把浏览器会员登录变成 API Key。检测到 CLI 只代表程序存在，真实账号和生成能力尚需实际调用验证。
 
-Codex 使用非交互 `exec --json`；Kimi 使用 `acp` 会话。两者共用进程管理、取消、超时和输出限制。具体协议、版本依据与限制见 [架构和运行引擎](docs/ARCHITECTURE.md)。默认不启用任何引擎。
+Codex 使用非交互 `exec --json`，Claude Code 使用 `--print --output-format json`，Kimi 使用 `acp` 会话，MiniMax 使用 `mmx text chat --messages-file - --output json --non-interactive`。四种适配共用进程管理、取消、超时和输出限制。具体协议、版本依据与限制见 [架构和运行引擎](docs/ARCHITECTURE.md)。首次启动默认不启用任何引擎，可通过设置界面启用。
 
 另有可选的 OpenAI-compatible Chat Completions 适配：
 

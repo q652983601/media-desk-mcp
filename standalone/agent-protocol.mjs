@@ -7,7 +7,7 @@ export function agentError(code, message) {
 }
 
 function processFailure(agent, code, stderr) {
-  if (/not logged in|authentication|unauthorized|auth.required|please log.?in|login required|invalid.*credential/i.test(stderr)) {
+  if ((agent === 'minimax' && code === 3) || /not logged in|authentication|unauthorized|auth.required|please log.?in|login required|invalid.*credential|no api key|not authenticated/i.test(stderr)) {
     return agentError('AGENT_AUTH_REQUIRED', `${agent} 尚未登录或登录已失效；请在运行服务的电脑上使用官方 CLI 完成登录。`)
   }
   if (/unexpected argument|unknown option|unrecognized argument|unknown command/i.test(stderr)) {
@@ -38,6 +38,45 @@ function codexProtocol({ finish, fail }) {
   }
 }
 
+function claudeProtocol({ finish }) {
+  let answer = null
+  return {
+    document: true,
+    start(_send, input, prompt) { input.end(prompt) },
+    message(frame) {
+      if (frame.type !== 'result' || frame.subtype !== 'success' || frame.is_error || typeof frame.result !== 'string' || !frame.result.trim()) {
+        throw agentError('AGENT_INCOMPLETE', 'Claude 未返回成功的完整正文。')
+      }
+      answer = frame.result
+    },
+    eof() {
+      if (!answer) throw agentError('AGENT_INCOMPLETE', 'Claude 未返回完整结果。')
+      finish(answer, false)
+    },
+    cancel() {},
+  }
+}
+
+function minimaxProtocol({ finish }) {
+  let answer = null
+  return {
+    document: true,
+    start(_send, input, prompt) { input.end(JSON.stringify([{ role: 'user', content: prompt }])) },
+    message(frame) {
+      if (frame.stop_reason !== 'end_turn' || !Array.isArray(frame.content)) {
+        throw agentError('AGENT_INCOMPLETE', 'MiniMax 未完整结束本轮生成。')
+      }
+      answer = frame.content.filter(block => block.type === 'text' && typeof block.text === 'string').map(block => block.text).join('')
+      if (!answer.trim()) throw agentError('AGENT_INCOMPLETE', 'MiniMax 未返回正文。')
+    },
+    eof() {
+      if (!answer) throw agentError('AGENT_INCOMPLETE', 'MiniMax 未返回完整结果。')
+      finish(answer, false)
+    },
+    cancel() {},
+  }
+}
+
 function kimiProtocol({ finish, fail, send, endInput, cwd, model }) {
   let stage = 'initialize'
   let sessionId = null
@@ -50,6 +89,7 @@ function kimiProtocol({ finish, fail, send, endInput, cwd, model }) {
     request('session/prompt', { sessionId, prompt: [{ type: 'text', text: prompt }] })
   }
   let promptText = ''
+  let modelOptionId = null
   return {
     start(_send, _input, prompt) {
       promptText = prompt
@@ -100,6 +140,7 @@ function kimiProtocol({ finish, fail, send, endInput, cwd, model }) {
           throw agentError('AGENT_PROTOCOL', 'Kimi 未返回有效的 ACP 会话。')
         }
         sessionId = result.sessionId
+        modelOptionId = result.configOptions?.find(option => option.category === 'model' && typeof option.id === 'string')?.id ?? null
         if (!result.modes?.availableModes?.some(mode => mode.id === 'default')) {
           throw agentError('AGENT_UNSUPPORTED_CLI', 'Kimi 未声明可显式选择的 default/manual 模式；不会启动自动批准会话。')
         }
@@ -110,7 +151,8 @@ function kimiProtocol({ finish, fail, send, endInput, cwd, model }) {
         if (model !== 'default') {
           stage = 'model'
           expectedId += 1
-          request('session/set_model', { sessionId, modelId: model })
+          if (modelOptionId) request('session/set_config_option', { sessionId, configId: modelOptionId, value: model })
+          else request('session/set_model', { sessionId, modelId: model })
         } else promptRequest(promptText)
       } else if (stage === 'model') {
         promptRequest(promptText)
@@ -216,7 +258,8 @@ export function runAgentProcess({ agent, command, args, cwd, env, prompt, model,
       reject(agentError('AGENT_START_FAILED', `${agent} CLI 无法启动。`))
       return
     }
-    protocol = (agent === 'codex' ? codexProtocol : kimiProtocol)({
+    const protocols = { codex: codexProtocol, kimi: kimiProtocol, claude: claudeProtocol, minimax: minimaxProtocol }
+    protocol = protocols[agent]({
       finish, fail, send, endInput: () => child.stdin.end(), cwd, model,
     })
     child.on('error', reason => {
@@ -229,6 +272,7 @@ export function runAgentProcess({ agent, command, args, cwd, env, prompt, model,
     child.stdout.on('data', chunk => {
       if (!count(chunk)) return
       buffer += decoder.write(chunk)
+      if (protocol.document) return
       let newline
       while ((newline = buffer.indexOf('\n')) !== -1) {
         const line = buffer.slice(0, newline)

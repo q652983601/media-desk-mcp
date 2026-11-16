@@ -5,7 +5,7 @@ import { delimiter, isAbsolute, join, resolve } from 'node:path'
 import { tmpdir } from 'node:os'
 import { agentError, runAgentProcess } from './agent-protocol.mjs'
 
-const DEFINITIONS = {
+export const AGENT_DEFINITIONS = {
   codex: {
     name: 'Codex CLI', protocol: 'codex-exec-jsonl',
     args: model => [
@@ -16,6 +16,22 @@ const DEFINITIONS = {
     ],
   },
   kimi: { name: 'Kimi CLI', protocol: 'acp-json-rpc', args: () => ['acp'] },
+  claude: {
+    name: 'Claude Code', protocol: 'claude-print-json',
+    args: model => [
+      '--print', '--output-format', 'json', '--no-session-persistence',
+      '--safe-mode', '--tools', '', '--strict-mcp-config',
+      '--mcp-config', '{"mcpServers":{}}',
+      ...(model === 'default' ? [] : ['--model', model]),
+    ],
+  },
+  minimax: {
+    name: 'MiniMax CLI (mmx)', command: 'mmx', protocol: 'minimax-messages-json',
+    args: model => [
+      'text', 'chat', '--messages-file', '-', '--output', 'json', '--non-interactive',
+      ...(model === 'default' ? [] : ['--model', model]),
+    ],
+  },
 }
 
 // Account state stays with the official CLI. Do not copy credential files or
@@ -23,17 +39,32 @@ const DEFINITIONS = {
 const ENV_KEYS = [
   'PATH', 'HOME', 'USER', 'LOGNAME', 'SHELL', 'TMPDIR', 'TMP', 'TEMP', 'LANG', 'LC_ALL',
   'SYSTEMROOT', 'SystemRoot', 'COMSPEC', 'PATHEXT', 'USERPROFILE', 'APPDATA', 'LOCALAPPDATA',
-  'CODEX_HOME', 'KIMI_CODE_HOME', 'KIMI_HOME',
+  'CODEX_HOME', 'KIMI_CODE_HOME', 'KIMI_HOME', 'CLAUDE_CONFIG_DIR',
   'HTTP_PROXY', 'HTTPS_PROXY', 'ALL_PROXY', 'NO_PROXY',
   'http_proxy', 'https_proxy', 'all_proxy', 'no_proxy',
   'SSL_CERT_FILE', 'SSL_CERT_DIR', 'NODE_EXTRA_CA_CERTS',
 ]
 
-function childEnvironment(env) {
-  return { ...Object.fromEntries(ENV_KEYS.filter(key => typeof env[key] === 'string').map(key => [key, env[key]])), NO_COLOR: '1', TERM: 'dumb' }
+function childEnvironment(env, id, native) {
+  const providerKeys = {
+    claude: ['ANTHROPIC_API_KEY', 'ANTHROPIC_AUTH_TOKEN', 'ANTHROPIC_BASE_URL'],
+    minimax: ['MINIMAX_API_KEY', 'MINIMAX_REGION', 'MINIMAX_BASE_URL'],
+  }
+  let providerEnvironment = providerKeys[id] ?? []
+  if (native && id === 'claude' && env.ANTHROPIC_BASE_URL) {
+    let nativeEndpoint = false
+    try {
+      const url = new URL(env.ANTHROPIC_BASE_URL)
+      nativeEndpoint = url.origin === 'https://api.anthropic.com' && !url.username && !url.password
+    } catch { /* An invalid forwarding endpoint has no native credentials. */ }
+    if (!nativeEndpoint) providerEnvironment = []
+  }
+  if (native && id === 'minimax') providerEnvironment = providerEnvironment.filter(key => key !== 'MINIMAX_BASE_URL')
+  const keys = [...ENV_KEYS, ...providerEnvironment]
+  return { ...Object.fromEntries(keys.filter(key => typeof env[key] === 'string').map(key => [key, env[key]])), NO_COLOR: '1', TERM: 'dumb' }
 }
 
-function findExecutable(command, env) {
+export function findExecutable(command, env) {
   if (!command || command.includes('\0')) return null
   const candidates = isAbsolute(command) || command.includes('/') || command.includes('\\')
     ? [resolve(command)]
@@ -69,22 +100,23 @@ function promptFor({ system, user, maxTokens }) {
 export function createAgentModelConfigs(env = process.env) {
   const selected = [...new Set(String(env.MEDIA_DESK_AGENTS ?? '').split(',').map(value => value.trim()).filter(Boolean))]
   if (!selected.length) return []
-  for (const id of selected) if (!(id in DEFINITIONS)) throw new Error(`Unsupported MEDIA_DESK_AGENTS entry: ${id}`)
+  for (const id of selected) if (!Object.hasOwn(AGENT_DEFINITIONS, id)) throw new Error(`Unsupported MEDIA_DESK_AGENTS entry: ${id}`)
   const timeoutMs = boundedNumber(env.MEDIA_DESK_AGENT_TIMEOUT_MS, 180_000, 100, 600_000, 'MEDIA_DESK_AGENT_TIMEOUT_MS')
   const maxOutputBytes = boundedNumber(env.MEDIA_DESK_AGENT_MAX_OUTPUT_BYTES, 2 * 1024 * 1024, 1024, 16 * 1024 * 1024, 'MEDIA_DESK_AGENT_MAX_OUTPUT_BYTES')
   const workRoot = resolve(env.MEDIA_DESK_AGENT_WORKDIR || join(tmpdir(), 'media-desk-agent-work'))
-  const processEnv = childEnvironment(env)
   return selected.flatMap(id => {
-    const definition = DEFINITIONS[id]
+    const definition = AGENT_DEFINITIONS[id]
     const prefix = `MEDIA_DESK_${id.toUpperCase()}`
-    const commandName = String(env[`${prefix}_COMMAND`] || id)
+    const native = env[`${prefix}_NATIVE`] === '1'
+    const commandName = String(env[`${prefix}_COMMAND`] || definition.command || id)
     const command = findExecutable(commandName, env)
     const rawModels = env[`${prefix}_MODELS`] || env[`${prefix}_MODEL`] || 'default'
     const models = [...new Set(String(rawModels).split(',').map(value => value.trim()).filter(Boolean))]
     if (!models.length || models.some(model => model.length > 160 || !/^[\w./:@+-]+$/.test(model))) throw new Error(`${prefix}_MODELS contains an invalid model identifier`)
+    if (native && models.some(model => /^(magpie|group)\//.test(model))) throw new Error(`${prefix}_MODELS must use native model identifiers`)
     let active = false
     const agentStatus = {
-      installed: Boolean(command), authenticated: 'unverified', protocol: definition.protocol,
+      installed: Boolean(command), authenticated: 'unverified', protocol: definition.protocol, native,
       reason: command ? 'CLI found; account and real generation have not been verified.' : `CLI not found; install ${id} or set ${prefix}_COMMAND to its executable path.`,
     }
     return models.map(model => ({
@@ -100,7 +132,7 @@ export function createAgentModelConfigs(env = process.env) {
           await mkdir(workRoot, { recursive: true, mode: 0o700 })
           cwd = await mkdtemp(join(workRoot, `${id}-`))
           return await runAgentProcess({
-            agent: id, command, args: definition.args(model), cwd, env: processEnv,
+            agent: id, command, args: definition.args(model), cwd, env: childEnvironment(env, id, native),
             prompt, model, signal: input.signal, timeoutMs, maxOutputBytes,
           })
         } finally {

@@ -10,6 +10,7 @@ import elevation from './theme/gradient-shadow-text.css'
 import corners from './theme/corner-shape.css'
 import scrollbars from './theme/scrollbar.css'
 import shell from './theme.css'
+import { CliSettings } from './cli-settings.jsx'
 
 const themeStyle = document.createElement('style')
 themeStyle.dataset.mediaDeskTheme = '39163dd30f703a79079e2d2446545cff3c453738'
@@ -40,7 +41,7 @@ apply({
   slots: {
     inject(_name, callback) { return callback() },
     register(slot, Component) {
-      if (slot.name === 'main' && slot.key === 'media-desk') root.render(<Component />)
+      if (slot.name === 'main' && slot.key === 'media-desk') root.render(<><Component /><CliSettings /></>)
       return noop
     },
   },

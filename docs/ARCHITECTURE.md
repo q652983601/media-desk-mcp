@@ -79,3 +79,34 @@ codex exec --json --ephemeral --sandbox read-only
 ## 为什么暂不做 MCP Apps 嵌入
 
 原完整工作台通过自己的网页提供。普通 MCP 客户端对交互 UI 的支持不一致，把所有界面绑定到某一种宿主会削弱通用性。之后可以单独为支持 MCP Apps 的客户端提供预览卡片；不需要因此重写当前原版前端或让协议依赖某一家 AI 产品。
+
+
+## CLI 网页配置增量
+
+「设置」内的 CLI 工具配置支持 Codex、Claude Code、Kimi、MiniMax mmx。`standalone/cli-settings.mjs` 管理数据目录中的 `cli.json`，使用 expectedRevision 拒绝过期覆盖，以临时文件和 rename 保存。环境变量只提供首次配置，网页保存后优先使用持久配置。启用状态、命令路径和模型列表会立即刷新原模型选择器。CLI 生成期间拒绝配置变更，已准备的旧配置会在生成入口核对版本。
+
+- `GET /media-desk/cli` 返回当前版本、四种 CLI 配置及安装检测结果。
+- `POST /media-desk/cli` 接受 expectedRevision 和完整 providers 数组，保存并立即应用。
+- `POST /media-desk/cli/detect` 检测提交的命令路径，返回安装状态。
+
+上述接口沿用服务的 Host、Origin 和认证检查。可执行文件作为单个 spawn 路径使用，启动参数由对应适配器固定。界面检测检查文件存在性与可执行权限，账号状态显示待验证。关闭或移除当前模型时，助手选择恢复为服务默认值。
+
+Claude Code 在本机 2.1.322 的帮助中核对了 print JSON、safe-mode、tools、strict-mcp-config 和 no-session-persistence 参数。输入通过 stdin，禁用内置工具并传入空 MCP 配置，成功的 result/success 才作为正文。MiniMax 基于本机 mmx 1.0.7 的 text chat 协议，使用 messages-file 的 stdin 输入，接收完整 Messages API JSON 并提取 text 内容块，stop_reason 必须为 end_turn。mmx 的 quiet 会输出纯文本，因此结构化适配使用 output=json 和 non-interactive。模型 default 由对应 CLI 自行解析。
+
+Claude 和 MiniMax 的提供方凭据环境变量分别只传给对应子进程。其余进程行为沿用共用适配层。实际账号和模型输出验收单独记录。
+
+
+## Magpie 模型 provider
+
+`standalone/magpie.mjs` 管理网关连接与模型目录，`magpie-settings.jsx` 提供设置页中的模型搜索、下拉选择与推理强度控件。API 为 `GET/POST /media-desk/magpie` 和 `POST /media-desk/magpie/models`，沿用服务的 Host、Origin 和身份验证。`GET` 返回配置版本、目录和 hasKey，密钥由服务私有保存。目录请求以短超时读取 Magpie 的 `/v1/models`，拒绝重定向并清理返回字段。`reasoning_levels` 与 `supported_reasoning_levels` 转换为选择器级别，明确声明非文字输出的模型从写作目录中过滤。
+
+保存使用 expectedRevision 与原子 rename。调用进行中拒绝覆盖连接配置，已准备的旧调用在 stream 入口核对版本。保存启用的 Magpie 配置时，将助手选中模型更新为该 provider/model。网关密钥按 origin 绑定，跨 origin 配置使用新输入的凭据。关闭过程会等待配置写入队列。
+
+文本执行复用 `createModelServices` 的 OpenAI-compatible Chat Completions 适配，按选定模型传递 reasoning_effort。模型目录和路由组来自 Magpie 当前配置，实际账号、额度和路由执行由 Magpie 管理。模型生成成功、失败或取消时释放配置占用。
+
+
+## 原生 CLI 与助手默认选择
+
+CLI 配置的 native 字段选择原生运行方式。旧配置按 false 读取，环境变量 `MEDIA_DESK_<PROVIDER>_NATIVE=1` 可提供初始值。原生 Claude 的子进程在发现跨提供方转发地址时移除对应 Anthropic API key、token、base URL，使用 CLI 自己的登录。原生 Anthropic 地址或默认地址仍可使用其环境凭据。原生 MiniMax 保留其凭据和区域，移除继承的 base URL。原生模型配置拒绝 magpie/group 路由标识。
+
+CLI 保存请求可带 assistant/provider/model。服务先验证目标入口已启用且模型属于该入口，再保存配置并更新原 settings.json 的 assistant。设置页只在用户明确修改默认选择时提交 assistant，其他保存按原选择接续。当前 Kimi ACP 可通过 session/set_config_option 选择 configOptions 声明的模型选项，旧协议继续使用 session/set_model。
