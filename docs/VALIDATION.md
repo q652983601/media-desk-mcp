@@ -14,10 +14,13 @@
 | 多客户端写入 | 并发新增 10 条灵感不丢失；稿件与图片可从原 HTTP state 读回；旧版本完整替换返回冲突 |
 | Codex / Kimi adapter | 11 项假 CLI 测试：参数、协议完成、失败退出、输入字面量、环境隔离、超时取消、输出限制、Kimi 权限请求拒绝 |
 | 文档接口示例 | MCP 文档的工具/资源清单与实际发现结果一致；JSON 示例可解析并匹配实际 schema |
+| 真实浏览器交互 | GitHub Actions Chromium：桌面 1440×1000、手机 390×844，各含浅色/深色，共 4 组通过；五页导航、MCP 写入后看板出现、Studio 正文轮询、移动抽屉、表格键盘打开，均无需刷新 |
 
 原项目 Monid 短链测试原先在 fake fetch 下仍调用真实 DNS，导致环境相关失败；现通过依赖注入隔离 DNS，生产默认仍使用真实解析和公开地址校验，同时验证私网/混合 DNS/内网重定向拒绝。
 
-全量测试和浏览器 CI 的最终结果以本仓库 [Actions](https://github.com/q652983601/media-desk-mcp/actions/workflows/standalone.yml) 为准。浏览器 smoke 使用临时数据服务、真实 MCP 写入与 Playwright Chromium；开发容器内的 Chromium 因系统 socket 权限限制不能启动，因此不把本机静态构建当作浏览器验收。
+首轮完整 CI 已通过：[run 43840166782](https://github.com/q652983601/media-desk-mcp/actions/runs/43840166782)，验证的代码提交为 [`7d901e8`](https://github.com/q652983601/media-desk-mcp/commit/7d901e818b0ac93885e80d84d7b94df055c7640a)。该次在 Node 22 / 标准 Ubuntu runner 上重跑了前端完整性、构建、148 项测试及 4 组浏览器交互；无页面错误、console error、应用请求错误或第三方网络调用。后续状态见 [Actions](https://github.com/q652983601/media-desk-mcp/actions/workflows/standalone.yml)。
+
+浏览器 smoke 使用临时数据服务、真实 MCP 写入与 Playwright Chromium。开发容器内 Chromium 因系统 socket 权限限制不能启动，已改由上述 runner 实际运行；没有把本机静态构建当作浏览器验收。成功运行后的临时数据已清理，没有上传测试截图或 artifacts。
 
 ## 尚未验证或不属于本版能力
 
