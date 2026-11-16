@@ -68,12 +68,16 @@ npm start
 
 MCP 暴露 **17 个工具、3 个资源**，包括灵感、完整稿件、图片上传/挂载、排期、状态、表现数据、风格、规则、复盘和导出。完整 API 以工具发现结果和 [接口文档](docs/MCP.md) 为准。
 
-## 在原界面内选择 Codex / Kimi
+## 在设置中配置 CLI 工具
 
-先在**运行工作台的同一台机器、同一系统用户**下安装并登录对应官方 CLI，然后在 `.env` 中显式启用：
+打开「设置」→「配置 Codex、Claude、Kimi、MiniMax」，填写可执行文件路径、启用状态和模型列表，点击「保存并应用」。配置立即生效，顶栏「助手模型」显示启用的 CLI 及其模型。模型 ID 用英文逗号分隔，`default` 沿用 CLI 默认。
+
+安装检测会检查服务机器上的可执行文件。账号登录与实际生成需在同一系统用户下验证。MiniMax 通过 `mmx text chat` 使用已有 MiniMax 登录或凭据配置。配置存放在数据目录的 `cli.json` 中，保存采用版本冲突检查，CLI 正在生成时需等待完成或取消。
+
+也可以在 `.env` 中设置初始值，网页保存后的配置优先：
 
 ```dotenv
-MEDIA_DESK_AGENTS=codex,kimi
+MEDIA_DESK_AGENTS=codex,claude,kimi,minimax
 # 不在 PATH 时指定可执行文件的绝对路径
 # MEDIA_DESK_CODEX_COMMAND=/absolute/path/to/codex
 # MEDIA_DESK_KIMI_COMMAND=/absolute/path/to/kimi
@@ -82,9 +86,9 @@ MEDIA_DESK_AGENTS=codex,kimi
 # MEDIA_DESK_KIMI_MODELS=default
 ```
 
-重启服务，原模型选择器会出现配置的提供方和型号。运行时用官方 CLI 自己的账号状态，不复制登录凭据，不自动开通订阅，也不把浏览器会员登录变成 API Key。检测到 CLI 只代表程序存在，真实账号和生成能力尚需实际调用验证。
+使用环境变量设置初始值后重启服务，原模型选择器会出现配置的提供方和型号。运行时用官方 CLI 自己的账号状态，不复制登录凭据，不自动开通订阅，也不把浏览器会员登录变成 API Key。检测到 CLI 只代表程序存在，真实账号和生成能力尚需实际调用验证。
 
-Codex 使用非交互 `exec --json`；Kimi 使用 `acp` 会话。两者共用进程管理、取消、超时和输出限制。具体协议、版本依据与限制见 [架构和运行引擎](docs/ARCHITECTURE.md)。默认不启用任何引擎。
+Codex 使用非交互 `exec --json`，Claude Code 使用 `--print --output-format json`，Kimi 使用 `acp` 会话，MiniMax 使用 `mmx text chat --messages-file - --output json --non-interactive`。四种适配共用进程管理、取消、超时和输出限制。具体协议、版本依据与限制见 [架构和运行引擎](docs/ARCHITECTURE.md)。首次启动默认不启用任何引擎，可通过设置界面启用。
 
 另有可选的 OpenAI-compatible Chat Completions 适配：
 

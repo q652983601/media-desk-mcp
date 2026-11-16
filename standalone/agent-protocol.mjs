@@ -7,7 +7,7 @@ export function agentError(code, message) {
 }
 
 function processFailure(agent, code, stderr) {
-  if (/not logged in|authentication|unauthorized|auth.required|please log.?in|login required|invalid.*credential/i.test(stderr)) {
+  if ((agent === 'minimax' && code === 3) || /not logged in|authentication|unauthorized|auth.required|please log.?in|login required|invalid.*credential|no api key|not authenticated/i.test(stderr)) {
     return agentError('AGENT_AUTH_REQUIRED', `${agent} 尚未登录或登录已失效；请在运行服务的电脑上使用官方 CLI 完成登录。`)
   }
   if (/unexpected argument|unknown option|unrecognized argument|unknown command/i.test(stderr)) {
@@ -32,6 +32,45 @@ function codexProtocol({ finish, fail }) {
     },
     eof() {
       if (!completed || !answer?.trim()) throw agentError('AGENT_INCOMPLETE', 'Codex 未返回完整的 turn.completed 与最终正文。')
+      finish(answer, false)
+    },
+    cancel() {},
+  }
+}
+
+function claudeProtocol({ finish }) {
+  let answer = null
+  return {
+    document: true,
+    start(_send, input, prompt) { input.end(prompt) },
+    message(frame) {
+      if (frame.type !== 'result' || frame.subtype !== 'success' || frame.is_error || typeof frame.result !== 'string' || !frame.result.trim()) {
+        throw agentError('AGENT_INCOMPLETE', 'Claude 未返回成功的完整正文。')
+      }
+      answer = frame.result
+    },
+    eof() {
+      if (!answer) throw agentError('AGENT_INCOMPLETE', 'Claude 未返回完整结果。')
+      finish(answer, false)
+    },
+    cancel() {},
+  }
+}
+
+function minimaxProtocol({ finish }) {
+  let answer = null
+  return {
+    document: true,
+    start(_send, input, prompt) { input.end(JSON.stringify([{ role: 'user', content: prompt }])) },
+    message(frame) {
+      if (frame.stop_reason !== 'end_turn' || !Array.isArray(frame.content)) {
+        throw agentError('AGENT_INCOMPLETE', 'MiniMax 未完整结束本轮生成。')
+      }
+      answer = frame.content.filter(block => block.type === 'text' && typeof block.text === 'string').map(block => block.text).join('')
+      if (!answer.trim()) throw agentError('AGENT_INCOMPLETE', 'MiniMax 未返回正文。')
+    },
+    eof() {
+      if (!answer) throw agentError('AGENT_INCOMPLETE', 'MiniMax 未返回完整结果。')
       finish(answer, false)
     },
     cancel() {},
@@ -216,7 +255,8 @@ export function runAgentProcess({ agent, command, args, cwd, env, prompt, model,
       reject(agentError('AGENT_START_FAILED', `${agent} CLI 无法启动。`))
       return
     }
-    protocol = (agent === 'codex' ? codexProtocol : kimiProtocol)({
+    const protocols = { codex: codexProtocol, kimi: kimiProtocol, claude: claudeProtocol, minimax: minimaxProtocol }
+    protocol = protocols[agent]({
       finish, fail, send, endInput: () => child.stdin.end(), cwd, model,
     })
     child.on('error', reason => {
@@ -229,6 +269,7 @@ export function runAgentProcess({ agent, command, args, cwd, env, prompt, model,
     child.stdout.on('data', chunk => {
       if (!count(chunk)) return
       buffer += decoder.write(chunk)
+      if (protocol.document) return
       let newline
       while ((newline = buffer.indexOf('\n')) !== -1) {
         const line = buffer.slice(0, newline)

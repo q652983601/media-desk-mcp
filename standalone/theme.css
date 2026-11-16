@@ -7,3 +7,12 @@ html, body, #app {
   overflow: hidden;
 }
 body { --dsh-frame-leading-clearance: 0px; }
+.md-root.md-cli-root { position: fixed; inset: 0; z-index: 70; background: transparent; }
+.md-cli-entry { padding-bottom: 12px; border-bottom: .5px solid var(--line); }
+.md-cli-provider { display: flex; flex-direction: column; gap: 8px; margin: 0; padding: 10px 12px 12px; border: .5px solid var(--line-strong); border-radius: var(--r-md); min-width: 0; }
+.md-cli-provider legend { padding: 0 4px; font-size: 14px; }
+.md-cli-status { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; font-size: 12px; color: var(--ink3); }
+.md-cli-status label { display: inline-flex; align-items: center; gap: 6px; color: var(--ink); }
+.md-cli-path { overflow-wrap: anywhere; color: var(--ink3); font-size: 11px; }
+.md-cli-intro { margin: 0; font-size: 12px; line-height: 1.7; }
+.md-cli-error { font-size: 13px; color: var(--ink); }

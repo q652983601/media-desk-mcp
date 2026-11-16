@@ -112,6 +112,39 @@ test('an unresponsive process is terminated at the configured timeout', async t 
   assert.deepEqual(await readdir(work), [])
 })
 
+test('Claude print JSON uses stdin, disables tools, and requires a successful final result', async t => {
+  const { config } = await fixture(t, `
+    import { readFileSync } from 'node:fs';
+    const result = JSON.stringify({ prompt: readFileSync(0, 'utf8'), argv: process.argv.slice(2), miniMaxKey: process.env.MINIMAX_API_KEY });
+    console.log(JSON.stringify({type:'result',subtype:'success',is_error:false,result}, null, 2));
+  `, 'claude', { MINIMAX_API_KEY: 'fixture-private', MEDIA_DESK_CLAUDE_MODELS: 'sonnet' })
+  const output = JSON.parse((await config.generate(input)).text)
+  assert.ok(output.prompt.includes(input.user))
+  assert.ok(output.argv.includes('--safe-mode') && output.argv.includes('--strict-mcp-config'))
+  assert.equal(output.argv[output.argv.indexOf('--tools') + 1], '')
+  assert.equal(output.argv[output.argv.indexOf('--model') + 1], 'sonnet')
+  assert.equal(output.miniMaxKey, undefined)
+  const failed = await fixture(t, `console.log(JSON.stringify({type:'result',subtype:'error_max_turns',is_error:true,result:'partial'}));`, 'claude')
+  await assert.rejects(failed.config.generate(input), { code: 'AGENT_INCOMPLETE' })
+})
+
+test('MiniMax mmx reads message JSON from stdin and extracts only final text blocks', async t => {
+  const { config } = await fixture(t, `
+    import { readFileSync } from 'node:fs';
+    const messages = JSON.parse(readFileSync(0, 'utf8'));
+    const text = JSON.stringify({messages,argv:process.argv.slice(2),hasClaudeKey:!!process.env.ANTHROPIC_API_KEY,hasOwnKey:!!process.env.MINIMAX_API_KEY});
+    console.log(JSON.stringify({stop_reason:'end_turn',content:[{type:'thinking',thinking:'private'},{type:'text',text}]}, null, 2));
+  `, 'minimax', { ANTHROPIC_API_KEY: 'fixture-other', MINIMAX_API_KEY: 'fixture-own', MEDIA_DESK_MINIMAX_MODELS: 'MiniMax-M2.7' })
+  const output = JSON.parse((await config.generate(input)).text)
+  assert.ok(output.messages[0].content.includes(input.user))
+  assert.ok(output.argv.includes('--messages-file') && output.argv.includes('--non-interactive'))
+  assert.ok(!output.argv.includes('--quiet'))
+  assert.equal(output.hasClaudeKey, false)
+  assert.equal(output.hasOwnKey, true)
+  const truncated = await fixture(t, `console.log(JSON.stringify({stop_reason:'max_tokens',content:[{type:'text',text:'partial'}]}));`, 'minimax')
+  await assert.rejects(truncated.config.generate(input), { code: 'AGENT_INCOMPLETE' })
+})
+
 const kimiFixture = (options = {}) => `
   import { createInterface } from 'node:readline';
   const options = ${JSON.stringify(options)};

@@ -79,3 +79,18 @@ codex exec --json --ephemeral --sandbox read-only
 ## 为什么暂不做 MCP Apps 嵌入
 
 原完整工作台通过自己的网页提供。普通 MCP 客户端对交互 UI 的支持不一致，把所有界面绑定到某一种宿主会削弱通用性。之后可以单独为支持 MCP Apps 的客户端提供预览卡片；不需要因此重写当前原版前端或让协议依赖某一家 AI 产品。
+
+
+## CLI 网页配置增量
+
+「设置」内的 CLI 工具配置支持 Codex、Claude Code、Kimi、MiniMax mmx。`standalone/cli-settings.mjs` 管理数据目录中的 `cli.json`，使用 expectedRevision 拒绝过期覆盖，以临时文件和 rename 保存。环境变量只提供首次配置，网页保存后优先使用持久配置。启用状态、命令路径和模型列表会立即刷新原模型选择器。CLI 生成期间拒绝配置变更，已准备的旧配置会在生成入口核对版本。
+
+- `GET /media-desk/cli` 返回当前版本、四种 CLI 配置及安装检测结果。
+- `POST /media-desk/cli` 接受 expectedRevision 和完整 providers 数组，保存并立即应用。
+- `POST /media-desk/cli/detect` 检测提交的命令路径，返回安装状态。
+
+上述接口沿用服务的 Host、Origin 和认证检查。可执行文件作为单个 spawn 路径使用，启动参数由对应适配器固定。界面检测检查文件存在性与可执行权限，账号状态显示待验证。关闭或移除当前模型时，助手选择恢复为服务默认值。
+
+Claude Code 在本机 2.1.322 的帮助中核对了 print JSON、safe-mode、tools、strict-mcp-config 和 no-session-persistence 参数。输入通过 stdin，禁用内置工具并传入空 MCP 配置，成功的 result/success 才作为正文。MiniMax 基于本机 mmx 1.0.7 的 text chat 协议，使用 messages-file 的 stdin 输入，接收完整 Messages API JSON 并提取 text 内容块，stop_reason 必须为 end_turn。mmx 的 quiet 会输出纯文本，因此结构化适配使用 output=json 和 non-interactive。模型 default 由对应 CLI 自行解析。
+
+Claude 和 MiniMax 的提供方凭据环境变量分别只传给对应子进程。其余进程行为沿用共用适配层。实际账号和模型输出验收单独记录。
