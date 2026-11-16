@@ -47,3 +47,12 @@
 本机 Magpie 0.1.4322 的 `/api/hello` 和 `/v1/models` 已实际返回成功，原目录 36 项。工作台读取并过滤非文字输出后，提供 32 个写作模型与路由组。ego-browser 已验证模型查询、搜索、下拉选择、元数据提供的推理强度、保存和重新打开。当前本机工作台选中 `group/kimi-write`，推理强度跟随模型默认。
 
 本机 Node 22.23.1 使用 SSD TMPDIR 跑过 159/159 项测试，前端构建与 51 文件完整性检查通过。新增回归覆盖目录流式大小限制、异常清理、凭据隐藏、跨 origin 凭据隔离、版本冲突、重启持久化、Chat Completions 请求映射、推理强度与在途配置保护。真实模型生成尚未验证。
+
+
+## 本机原生 runtime 配置（2026-11-16）
+
+当前 Mac 助手选择为 Kimi CLI / kimi-code/k3.1-pro。Kimi、Codex 和 MiniMax mmx 的真实本机 CLI 测试均返回 runtime-ok。通过正常 POST /media-desk/chat 入口发起的连通性验证返回 engine=kimi-code/k3.1-pro、modelOk=true 和「本机 Kimi CLI 已连接」，灵感/内容 items 的哈希一致。
+
+隔离服务继承的 Kimi 转发环境后，Claude 原生 auth status 返回 loggedIn=false。该 CLI 的路径与原生模型选项已配置，当前为待登录状态。163 项本机回归、前端构建和 51 文件完整性检查通过，覆盖原生环境处理、助手选择验证以及新旧 Kimi ACP 模型接口。
+
+Magpie 的 Kimi 默认已通过官方 default 命令恢复为原生 kimi-code/k3.1-pro，Codex 保持其原生 gpt-6.1-sol 配置。Kimi/Codex 的选择菜单按各自提供方收窄。配置前的 Magpie profile 为 media-desk-before-native-20261116-2158，运行证据位于本机 Media Desk runtime。

@@ -103,3 +103,10 @@ Claude 和 MiniMax 的提供方凭据环境变量分别只传给对应子进程�
 保存使用 expectedRevision 与原子 rename。调用进行中拒绝覆盖连接配置，已准备的旧调用在 stream 入口核对版本。保存启用的 Magpie 配置时，将助手选中模型更新为该 provider/model。网关密钥按 origin 绑定，跨 origin 配置使用新输入的凭据。关闭过程会等待配置写入队列。
 
 文本执行复用 `createModelServices` 的 OpenAI-compatible Chat Completions 适配，按选定模型传递 reasoning_effort。模型目录和路由组来自 Magpie 当前配置，实际账号、额度和路由执行由 Magpie 管理。模型生成成功、失败或取消时释放配置占用。
+
+
+## 原生 CLI 与助手默认选择
+
+CLI 配置的 native 字段选择原生运行方式。旧配置按 false 读取，环境变量 `MEDIA_DESK_<PROVIDER>_NATIVE=1` 可提供初始值。原生 Claude 的子进程在发现跨提供方转发地址时移除对应 Anthropic API key、token、base URL，使用 CLI 自己的登录。原生 Anthropic 地址或默认地址仍可使用其环境凭据。原生 MiniMax 保留其凭据和区域，移除继承的 base URL。原生模型配置拒绝 magpie/group 路由标识。
+
+CLI 保存请求可带 assistant/provider/model。服务先验证目标入口已启用且模型属于该入口，再保存配置并更新原 settings.json 的 assistant。设置页只在用户明确修改默认选择时提交 assistant，其他保存按原选择接续。当前 Kimi ACP 可通过 session/set_config_option 选择 configOptions 声明的模型选项，旧协议继续使用 session/set_model。

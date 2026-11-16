@@ -127,8 +127,13 @@ export function createStandaloneServer(options = {}) {
     }
     if (path === '/media-desk/cli' && ['GET', 'POST'].includes(req.method)) {
       const result = req.method === 'POST' ? await cliSettings.save(await readJson(req)) : cliSettings.read()
-      if (req.method === 'POST') await reconcileAssistant()
-      json(res, 200, result)
+      if (req.method === 'POST') {
+        if (result.assistant) {
+          const updated = await runtime.settings.update({ assistant: result.assistant })
+          setAssistantModel(updated.assistant)
+        } else await reconcileAssistant()
+      }
+      json(res, 200, { ...result, assistant: (await runtime.settings.read()).assistant })
       return true
     }
     if (req.method === 'GET' && path === '/media-desk/production') {

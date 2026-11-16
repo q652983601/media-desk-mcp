@@ -20,7 +20,9 @@ function validateProviders(providers) {
     if (!Array.isArray(row.models) || !row.models.length || row.models.length > 30 || row.models.some(model => typeof model !== 'string' || model.length > 160 || !/^[\w./:@+-]+$/.test(model))) {
       throw invalid(`${id} 的模型列表无效，请用英文逗号分隔模型 ID。`)
     }
-    return { id, enabled: row.enabled, command: row.command.trim(), models: [...new Set(row.models)] }
+    if (row.native !== undefined && typeof row.native !== 'boolean') throw invalid(`${id} 的原生 runtime 状态无效。`)
+    if (row.native && row.models.some(model => /^(magpie|group)\//.test(model))) throw invalid(`${id} 请填写原生模型 ID。`)
+    return { id, enabled: row.enabled, native: row.native ?? false, command: row.command.trim(), models: [...new Set(row.models)] }
   })
 }
 
@@ -34,7 +36,7 @@ export async function createCliSettings({ dataDir, env, onChange }) {
     providers: Object.entries(AGENT_DEFINITIONS).map(([id, definition]) => {
       const prefix = `MEDIA_DESK_${id.toUpperCase()}`
       return {
-        id, enabled: selected.has(id), command: env[`${prefix}_COMMAND`] || definition.command || id,
+        id, enabled: selected.has(id), native: env[`${prefix}_NATIVE`] === '1', command: env[`${prefix}_COMMAND`] || definition.command || id,
         models: String(env[`${prefix}_MODELS`] || env[`${prefix}_MODEL`] || 'default').split(',').map(value => value.trim()).filter(Boolean),
       }
     }),
@@ -51,6 +53,7 @@ export async function createCliSettings({ dataDir, env, onChange }) {
     for (const row of value.providers) {
       configuredEnv[`MEDIA_DESK_${row.id.toUpperCase()}_COMMAND`] = row.command
       configuredEnv[`MEDIA_DESK_${row.id.toUpperCase()}_MODELS`] = row.models.join(',')
+      configuredEnv[`MEDIA_DESK_${row.id.toUpperCase()}_NATIVE`] = row.native ? '1' : '0'
     }
     return createAgentModelConfigs(configuredEnv).map(config => ({
       ...config,
@@ -77,6 +80,12 @@ export async function createCliSettings({ dataDir, env, onChange }) {
     if (!body || typeof body !== 'object') throw invalid('CLI 配置必须为 JSON 对象。')
     if (body.expectedRevision !== saved.revision) throw Object.assign(new Error('CLI 配置已被更新，请重新读取后保存。'), { status: 409 })
     const providers = validateProviders(body.providers)
+    if (body.assistant !== undefined) {
+      const selection = body.assistant
+      const provider = providers.find(row => row.enabled && row.id === selection?.provider)
+      const followsDefault = selection?.provider === '' && selection?.model === ''
+      if (!followsDefault && !provider?.models.includes(selection?.model)) throw invalid('请从已启用的 CLI 中选择助手模型。')
+    }
     if (active) throw Object.assign(new Error('CLI 正在生成内容，完成或取消后可保存配置。'), { status: 409 })
     updating = true
     const next = { revision: randomUUID(), providers }
@@ -87,7 +96,7 @@ export async function createCliSettings({ dataDir, env, onChange }) {
       await rename(temporary, file)
       saved = next
       onChange(configs)
-      return read()
+      return { ...read(), ...(body.assistant === undefined ? {} : { assistant: body.assistant }) }
     } finally {
       updating = false
     }

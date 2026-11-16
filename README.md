@@ -84,6 +84,8 @@ Magpie 原接口与配置说明见 [官方接入文档](https://usemagpie.ai/doc
 
 安装检测会检查服务机器上的可执行文件。账号登录与实际生成需在同一系统用户下验证。MiniMax 通过 `mmx text chat` 使用已有 MiniMax 登录或凭据配置。配置存放在数据目录的 `cli.json` 中，保存采用版本冲突检查，CLI 正在生成时需等待完成或取消。
 
+「本机 CLI」可设置各入口的「原生 runtime」，并选择「助手默认 runtime」和「助手默认模型」。原生模式下，Claude 使用 CLI 自身的登录，服务进程继承的跨提供方 Anthropic 转发地址和凭据会从子进程环境移除。MiniMax 沿用其本机凭据与区域配置。Codex、Kimi、MiniMax 各自通过安装的本机 CLI 执行，Kimi 同时适配当前 ACP configOptions 模型选择接口。
+
 也可以在 `.env` 中设置初始值，网页保存后的配置优先：
 
 ```dotenv

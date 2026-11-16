@@ -16,3 +16,8 @@
 - Persist gateway settings with revision checks, active-call protection and origin-bound secret reuse. Selecting a Magpie model applies to assistant and production workflows.
 - Added Magpie regression coverage for catalog normalization, secret redaction, settings conflicts, persistence, generation request mapping and active-call guards.
 - Magpie candidate local validation passed 159/159 tests, frontend build and 51-file integrity verification. Real local model discovery and browser configuration/save/reopen passed. Actual generation remains pending.
+
+- Added native CLI mode and explicit assistant runtime/model selection in local CLI settings. Legacy configuration keeps its previous mode, and unrelated saves preserve the assistant choice.
+- Added current Kimi ACP configOptions model selection while retaining legacy protocol handling.
+- Native Kimi, Codex and MiniMax CLI live checks passed. Normal assistant entry passed through Kimi K3.1 Pro. Native Claude login is pending on the deployment machine.
+- Native CLI candidate validation passed 163/163 local tests, frontend build and integrity checks. Independent source and desktop/mobile review found no remaining blockers.

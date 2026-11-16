@@ -45,12 +45,22 @@ const ENV_KEYS = [
   'SSL_CERT_FILE', 'SSL_CERT_DIR', 'NODE_EXTRA_CA_CERTS',
 ]
 
-function childEnvironment(env, id) {
+function childEnvironment(env, id, native) {
   const providerKeys = {
     claude: ['ANTHROPIC_API_KEY', 'ANTHROPIC_AUTH_TOKEN', 'ANTHROPIC_BASE_URL'],
     minimax: ['MINIMAX_API_KEY', 'MINIMAX_REGION', 'MINIMAX_BASE_URL'],
   }
-  const keys = [...ENV_KEYS, ...(providerKeys[id] ?? [])]
+  let providerEnvironment = providerKeys[id] ?? []
+  if (native && id === 'claude' && env.ANTHROPIC_BASE_URL) {
+    let nativeEndpoint = false
+    try {
+      const url = new URL(env.ANTHROPIC_BASE_URL)
+      nativeEndpoint = url.origin === 'https://api.anthropic.com' && !url.username && !url.password
+    } catch { /* An invalid forwarding endpoint has no native credentials. */ }
+    if (!nativeEndpoint) providerEnvironment = []
+  }
+  if (native && id === 'minimax') providerEnvironment = providerEnvironment.filter(key => key !== 'MINIMAX_BASE_URL')
+  const keys = [...ENV_KEYS, ...providerEnvironment]
   return { ...Object.fromEntries(keys.filter(key => typeof env[key] === 'string').map(key => [key, env[key]])), NO_COLOR: '1', TERM: 'dumb' }
 }
 
@@ -97,14 +107,16 @@ export function createAgentModelConfigs(env = process.env) {
   return selected.flatMap(id => {
     const definition = AGENT_DEFINITIONS[id]
     const prefix = `MEDIA_DESK_${id.toUpperCase()}`
+    const native = env[`${prefix}_NATIVE`] === '1'
     const commandName = String(env[`${prefix}_COMMAND`] || definition.command || id)
     const command = findExecutable(commandName, env)
     const rawModels = env[`${prefix}_MODELS`] || env[`${prefix}_MODEL`] || 'default'
     const models = [...new Set(String(rawModels).split(',').map(value => value.trim()).filter(Boolean))]
     if (!models.length || models.some(model => model.length > 160 || !/^[\w./:@+-]+$/.test(model))) throw new Error(`${prefix}_MODELS contains an invalid model identifier`)
+    if (native && models.some(model => /^(magpie|group)\//.test(model))) throw new Error(`${prefix}_MODELS must use native model identifiers`)
     let active = false
     const agentStatus = {
-      installed: Boolean(command), authenticated: 'unverified', protocol: definition.protocol,
+      installed: Boolean(command), authenticated: 'unverified', protocol: definition.protocol, native,
       reason: command ? 'CLI found; account and real generation have not been verified.' : `CLI not found; install ${id} or set ${prefix}_COMMAND to its executable path.`,
     }
     return models.map(model => ({
@@ -120,7 +132,7 @@ export function createAgentModelConfigs(env = process.env) {
           await mkdir(workRoot, { recursive: true, mode: 0o700 })
           cwd = await mkdtemp(join(workRoot, `${id}-`))
           return await runAgentProcess({
-            agent: id, command, args: definition.args(model), cwd, env: childEnvironment(env, id),
+            agent: id, command, args: definition.args(model), cwd, env: childEnvironment(env, id, native),
             prompt, model, signal: input.signal, timeoutMs, maxOutputBytes,
           })
         } finally {

@@ -128,6 +128,23 @@ test('Claude print JSON uses stdin, disables tools, and requires a successful fi
   await assert.rejects(failed.config.generate(input), { code: 'AGENT_INCOMPLETE' })
 })
 
+test('native Claude runtime omits inherited provider overrides and credentials', async t => {
+  const { config } = await fixture(t, `
+    const result = JSON.stringify({hasKey:!!process.env.ANTHROPIC_API_KEY,hasBase:!!process.env.ANTHROPIC_BASE_URL,hasToken:!!process.env.ANTHROPIC_AUTH_TOKEN});
+    console.log(JSON.stringify({type:'result',subtype:'success',result}));
+  `, 'claude', { MEDIA_DESK_CLAUDE_NATIVE: '1', ANTHROPIC_API_KEY: 'fixture', ANTHROPIC_AUTH_TOKEN: 'fixture', ANTHROPIC_BASE_URL: 'https://api.kimi.example' })
+  assert.deepEqual(JSON.parse((await config.generate(input)).text), {hasKey:false,hasBase:false,hasToken:false})
+  assert.throws(() => createAgentModelConfigs({MEDIA_DESK_AGENTS:'kimi',MEDIA_DESK_KIMI_NATIVE:'1',MEDIA_DESK_KIMI_MODELS:'magpie/group/write'}), /native model/)
+})
+
+test('native Claude accepts credentials for the native Anthropic endpoint', async t => {
+  const { config } = await fixture(t, `
+    const result = JSON.stringify({hasKey:!!process.env.ANTHROPIC_API_KEY,base:process.env.ANTHROPIC_BASE_URL});
+    console.log(JSON.stringify({type:'result',subtype:'success',result}));
+  `, 'claude', { MEDIA_DESK_CLAUDE_NATIVE: '1', ANTHROPIC_API_KEY: 'fixture-native', ANTHROPIC_BASE_URL: 'https://api.anthropic.com' })
+  assert.deepEqual(JSON.parse((await config.generate(input)).text), { hasKey: true, base: 'https://api.anthropic.com' })
+})
+
 test('MiniMax mmx reads message JSON from stdin and extracts only final text blocks', async t => {
   const { config } = await fixture(t, `
     import { readFileSync } from 'node:fs';
@@ -164,12 +181,16 @@ const kimiFixture = (options = {}) => `
     } else if (frame.method === 'session/new') {
       cwd = frame.params.cwd;
       if (options.authError) return send({id:frame.id,error:{code:-32000,message:'auth required; token=test-secret'}});
-      send({id:frame.id,result:{sessionId:'fixture-session',modes:{currentModeId:'default',availableModes:[{id:options.unsafeMode?'auto':'default'}]}}});
+      send({id:frame.id,result:{sessionId:'fixture-session',configOptions:options.modern?[{id:'model',category:'model'}]:undefined,modes:{currentModeId:'default',availableModes:[{id:options.unsafeMode?'auto':'default'}]}}});
     } else if (frame.method === 'session/set_mode') {
       if (frame.params.modeId !== 'default') process.exit(7);
       send({id:frame.id,result:{}});
     } else if (frame.method === 'session/set_model') {
       model = frame.params.modelId;
+      send({id:frame.id,result:{}});
+    } else if (frame.method === 'session/set_config_option') {
+      if (frame.params.configId !== 'model') process.exit(7);
+      model = frame.params.value;
       send({id:frame.id,result:{}});
     } else if (frame.method === 'session/prompt') {
       promptId = frame.id;
@@ -195,6 +216,11 @@ test('Kimi uses ACP, explicitly selects manual mode and denies tool/IO requests'
   assert.deepEqual(result.capabilities, { fs: { readTextFile: true, writeTextFile: true }, terminal: true })
   assert.ok(result.cwd.startsWith(work + '/kimi-'))
   assert.deepEqual(await readdir(work), [])
+})
+
+test('Kimi supports the current ACP model config option', async t => {
+  const { config } = await fixture(t, kimiFixture({ modern: true }), 'kimi', { MEDIA_DESK_KIMI_MODELS: 'kimi/k3.1-pro', MEDIA_DESK_KIMI_NATIVE: '1' })
+  assert.equal(JSON.parse((await config.generate(input)).text).model, 'kimi/k3.1-pro')
 })
 
 test('Kimi never downgrades to auto mode or accepts a truncated turn', async t => {

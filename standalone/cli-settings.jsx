@@ -1,6 +1,6 @@
 import React from 'react'
 import { createPortal } from 'react-dom'
-import { loadDesk, setDesk, useDesk } from '../client/desk.js'
+import { getDesk, loadDesk, setDesk, useDesk } from '../client/desk.js'
 import { Dialog } from '../client/ui.jsx'
 import { MagpieSettings } from './magpie-settings.jsx'
 
@@ -11,6 +11,12 @@ async function request(body, action = '') {
   const value = await response.json()
   if (!response.ok) throw new Error(value.error || '无法读取 CLI 配置。')
   return value
+}
+
+function editableConfig(value) {
+  const providers = value.providers.map(row => ({ ...row, modelText: row.models.join(', ') }))
+  const current = providers.find(row => row.enabled && row.id === value.assistant?.provider && row.models.includes(value.assistant.model))
+  return { ...value, providers, assistant: current ? value.assistant : { provider: '', model: '' }, assistantDirty: false }
 }
 
 /** Add a settings entry through the standalone shell, preserving upstream files. */
@@ -45,14 +51,14 @@ export function CliSettings() {
     setData(null)
     setError('')
     request().then(value => {
-      if (!cancelled) setData({ ...value, providers: value.providers.map(row => ({ ...row, modelText: row.models.join(', ') })) })
+      if (!cancelled) setData(editableConfig(value))
     }).catch(reason => { if (!cancelled) setError(reason.message) })
     return () => { cancelled = true }
   }, [open])
 
   const close = (completed = false) => { if (!busy || completed) { setOpen(false); setDesk({ settingsOpen: true }) } }
   const patch = (id, changes) => setData(value => ({ ...value, providers: value.providers.map(row => row.id === id ? { ...row, ...changes } : row) }))
-  const providers = () => data.providers.map(row => ({ id: row.id, enabled: row.enabled, command: row.command, models: row.modelText.split(',').map(model => model.trim()).filter(Boolean) }))
+  const providers = () => data.providers.map(row => ({ id: row.id, enabled: row.enabled, native: row.native, command: row.command, models: row.modelText.split(',').map(model => model.trim()).filter(Boolean) }))
   const refresh = async () => {
     setBusy(true)
     setError('')
@@ -72,6 +78,7 @@ export function CliSettings() {
       await request({
         expectedRevision: data.revision,
         providers: providers(),
+        ...(data.assistantDirty ? { assistant: data.assistant } : {}),
       })
       await loadDesk()
       setOpen(false)
@@ -82,7 +89,7 @@ export function CliSettings() {
   return <>
     {anchor ? createPortal(<div className="md-cli-entry md-field">
       <span>文字模型</span>
-      <button type="button" className="md-btn" onClick={() => { setDesk({ settingsOpen: false }); setTab('magpie'); setOpen(true) }}>配置 Magpie 模型与 CLI</button>
+      <button type="button" className="md-btn" onClick={() => { setTab(getDesk().settings?.assistant?.provider === 'magpie' ? 'magpie' : 'cli'); setDesk({ settingsOpen: false }); setOpen(true) }}>配置 Magpie 模型与 CLI</button>
     </div>, anchor) : null}
     {open ? <div className="md-root md-cli-root"><Dialog title="模型配置" width={600} onClose={() => close()}>
       <div className="md-presets md-provider-tabs" role="tablist" aria-label="模型接入方式">
@@ -96,18 +103,28 @@ export function CliSettings() {
           <legend>{row.name}</legend>
           <div className="md-cli-status">
             <label><input type="checkbox" checked={row.enabled} onChange={event => patch(row.id, { enabled: event.target.checked })} />启用</label>
-            <span>{row.installed === null ? '路径已修改 · 请重新检测' : row.installed ? '已安装 · 登录待验证' : '未找到可执行文件'}</span>
+            <label><input type="checkbox" checked={row.native} onChange={event => patch(row.id, { native: event.target.checked })} />原生 runtime</label>
+            <span>{row.installed === null ? '路径已修改 · 请重新检测' : row.installed ? '已找到本机 CLI' : '未找到可执行文件'}</span>
           </div>
           <label className="md-field"><span>可执行文件 · {row.id}</span><input aria-label={`${row.name} 可执行文件`} value={row.command} onChange={event => patch(row.id, { command: event.target.value, installed: null, resolvedCommand: null })} required spellCheck={false} /></label>
           {row.resolvedCommand ? <small className="md-cli-path">{row.resolvedCommand}</small> : null}
           <label className="md-field"><span>模型 ID · {row.id}</span><input aria-label={`${row.name} 模型`} value={row.modelText} onChange={event => patch(row.id, { modelText: event.target.value })} placeholder="default" required spellCheck={false} /></label>
         </fieldset>)}
+        {data ? <>
+          <label className="md-field"><span>助手默认 runtime</span><select aria-label="助手默认 runtime" disabled={busy} value={data.assistant.provider} onChange={event => {
+            const row = data.providers.find(item => item.id === event.target.value)
+            setData(value => ({ ...value, assistantDirty: true, assistant: { provider: row?.id || '', model: row?.modelText.split(',').map(model => model.trim()).find(Boolean) || '' } }))
+          }}><option value="">跟随默认</option>{data.providers.filter(row => row.enabled).map(row => <option key={row.id} value={row.id}>{row.name}</option>)}</select></label>
+          {data.assistant.provider ? <label className="md-field"><span>助手默认模型</span><select aria-label="助手默认模型" disabled={busy} value={data.assistant.model} onChange={event => setData(value => ({ ...value, assistantDirty: true, assistant: { ...value.assistant, model: event.target.value } }))}>
+            {(data.providers.find(row => row.id === data.assistant.provider)?.modelText || '').split(',').map(model => model.trim()).filter(Boolean).map(model => <option key={model} value={model}>{model}</option>)}
+          </select></label> : null}
+        </> : null}
         <p className="md-muted md-cli-intro">多个模型用英文逗号分隔，default 沿用 CLI 默认。MiniMax 使用 mmx text chat。检测只检查可执行文件，实际生成会使用对应账号额度。</p>
         {error ? <div className="md-field"><p className="md-cli-error" role="alert">{error}</p><button type="button" className="md-btn" disabled={busy} onClick={async () => {
           setBusy(true)
           try {
             const value = await request()
-            setData({ ...value, providers: value.providers.map(row => ({ ...row, modelText: row.models.join(', ') })) })
+            setData(editableConfig(value))
             setError('')
           } catch (reason) { setError(reason.message) } finally { setBusy(false) }
         }}>重新读取配置</button></div> : null}

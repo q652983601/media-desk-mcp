@@ -369,3 +369,8 @@ Saved configuration lives in cli.json in the service data directory and takes pr
 Settings → Configure Magpie models and CLI opens a Magpie gateway tab. Use http://127.0.0.1:3425/v1 for a local gateway, refresh its model catalog, choose a text model or routing group, optionally select a supported reasoning effort, and save. The assistant and production workflow use this selection immediately.
 
 The integration reads GET /v1/models and reuses the OpenAI-compatible POST /v1/chat/completions bridge. Configuration and optional gateway credentials live in the private magpie.json data file. The browser receives a hasKey flag. A changed gateway origin requires entering its credentials again. Actual model generation requires separate verification.
+
+
+## Native local runtimes and assistant defaults
+
+The local CLI tab offers native runtime mode and assistant runtime/model selectors. Native Claude uses its own login or native Anthropic API credentials. Inherited forwarding credentials are isolated when the configured Anthropic endpoint belongs to another provider. Native MiniMax uses its local credential and region configuration. Kimi supports both current ACP configOptions and the legacy model-selection method. Unrelated settings saves preserve the existing assistant choice.

@@ -67,3 +67,28 @@ test('HTTP settings apply immediately to the original model picker and survive r
   const saved = await (await fetch(`${next.url}/media-desk/cli`)).json()
   assert.ok(saved.providers.every(row => row.enabled))
 })
+
+test('CLI save validates and applies the native assistant selection', async t => {
+  const app = createStandaloneServer({ host: '127.0.0.1', port: 0, dataDir: await fixture(t), env: { PATH: '' } })
+  t.after(() => app.close())
+  const { url } = await app.listen()
+  const initial = await (await fetch(`${url}/media-desk/cli`)).json()
+  const configured = providers(initial, 'kimi', { enabled: true, native: true, models: ['kimi/k3.1-pro'] })
+  const post = body => fetch(`${url}/media-desk/cli`, {
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),
+  })
+  const invalid = await post({ expectedRevision: initial.revision, providers: configured, assistant: { provider: 'kimi', model: 'missing' } })
+  assert.equal(invalid.status, 400)
+  const saved = await post({ expectedRevision: initial.revision, providers: configured, assistant: { provider: 'kimi', model: 'kimi/k3.1-pro' } })
+  assert.equal(saved.status, 200)
+  const selected = await (await fetch(`${url}/media-desk/models`)).json()
+  assert.deepEqual(selected.current, { provider: 'kimi', model: 'kimi/k3.1-pro' })
+  const settings = await (await fetch(`${url}/media-desk/cli`)).json()
+  assert.equal(settings.providers.find(row => row.id === 'kimi').native, true)
+  await fetch(`${url}/media-desk/settings`, {
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ assistant: { provider: '', model: '' } }),
+  })
+  await post({ expectedRevision: settings.revision, providers: configured })
+  const followsDefault = await (await fetch(`${url}/media-desk/cli`)).json()
+  assert.deepEqual(followsDefault.assistant, { provider: '', model: '' })
+})
