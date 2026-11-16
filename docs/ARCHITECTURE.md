@@ -94,3 +94,12 @@ codex exec --json --ephemeral --sandbox read-only
 Claude Code 在本机 2.1.322 的帮助中核对了 print JSON、safe-mode、tools、strict-mcp-config 和 no-session-persistence 参数。输入通过 stdin，禁用内置工具并传入空 MCP 配置，成功的 result/success 才作为正文。MiniMax 基于本机 mmx 1.0.7 的 text chat 协议，使用 messages-file 的 stdin 输入，接收完整 Messages API JSON 并提取 text 内容块，stop_reason 必须为 end_turn。mmx 的 quiet 会输出纯文本，因此结构化适配使用 output=json 和 non-interactive。模型 default 由对应 CLI 自行解析。
 
 Claude 和 MiniMax 的提供方凭据环境变量分别只传给对应子进程。其余进程行为沿用共用适配层。实际账号和模型输出验收单独记录。
+
+
+## Magpie 模型 provider
+
+`standalone/magpie.mjs` 管理网关连接与模型目录，`magpie-settings.jsx` 提供设置页中的模型搜索、下拉选择与推理强度控件。API 为 `GET/POST /media-desk/magpie` 和 `POST /media-desk/magpie/models`，沿用服务的 Host、Origin 和身份验证。`GET` 返回配置版本、目录和 hasKey，密钥由服务私有保存。目录请求以短超时读取 Magpie 的 `/v1/models`，拒绝重定向并清理返回字段。`reasoning_levels` 与 `supported_reasoning_levels` 转换为选择器级别，明确声明非文字输出的模型从写作目录中过滤。
+
+保存使用 expectedRevision 与原子 rename。调用进行中拒绝覆盖连接配置，已准备的旧调用在 stream 入口核对版本。保存启用的 Magpie 配置时，将助手选中模型更新为该 provider/model。网关密钥按 origin 绑定，跨 origin 配置使用新输入的凭据。关闭过程会等待配置写入队列。
+
+文本执行复用 `createModelServices` 的 OpenAI-compatible Chat Completions 适配，按选定模型传递 reasoning_effort。模型目录和路由组来自 Magpie 当前配置，实际账号、额度和路由执行由 Magpie 管理。模型生成成功、失败或取消时释放配置占用。

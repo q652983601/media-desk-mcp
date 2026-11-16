@@ -29,7 +29,9 @@ function createSingleModelServices(config, { fetchImpl = fetch, signal: shutdown
     const response = await fetchImpl(url, {
       method: 'POST', signal,
       headers: { 'content-type': 'application/json', ...(config.apiKey ? { authorization: `Bearer ${config.apiKey}` } : {}) },
-      body: JSON.stringify({ model, messages: [{ role: 'system', content: system }, { role: 'user', content: user }], max_tokens: maxTokens, stream: false }),
+      body: JSON.stringify({ model, messages: [{ role: 'system', content: system }, { role: 'user', content: user }], max_tokens: maxTokens, stream: false,
+        ...(config.reasoningEffort ? { reasoning_effort: config.reasoningEffort } : {}),
+      }),
     })
     // Provider bodies may echo credentials or prompts. Do not expose those bodies in UI errors.
     if (!response.ok) throw new Error(`Text provider returned HTTP ${response.status}`)
@@ -54,12 +56,15 @@ function createSingleModelServices(config, { fetchImpl = fetch, signal: shutdown
             const signal = AbortSignal.any(signals)
             signal.throwIfAborted()
             const user = request.messages.flatMap(message => message.content ?? []).filter(row => row.type === 'text').map(row => row.text).join('\n\n')
-            const result = await generate({ system: request.system, user, model, maxTokens: request.maxTokens ?? selection.maxTokens, signal })
-            signal.throwIfAborted()
-            const text = typeof result === 'string' ? result : result?.text
-            if (typeof text !== 'string' || !text.trim()) throw new Error('Text provider returned no text')
-            yield { type: 'text-delta', text }
-            yield { type: 'finish', reason: { kind: 'stop' } }
+            const release = config.acquire?.()
+            try {
+              const result = await generate({ system: request.system, user, model, maxTokens: request.maxTokens ?? selection.maxTokens, signal })
+              signal.throwIfAborted()
+              const text = typeof result === 'string' ? result : result?.text
+              if (typeof text !== 'string' || !text.trim()) throw new Error('Text provider returned no text')
+              yield { type: 'text-delta', text }
+              yield { type: 'finish', reason: { kind: 'stop' } }
+            } finally { release?.() }
           },
         }
       },

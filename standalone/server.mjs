@@ -9,6 +9,7 @@ import { attachProductionAsset, importProduction, productionRevision } from './p
 import { createMcpHttpHandler } from './mcp-http.mjs'
 import { createCliSettings } from './cli-settings.mjs'
 import { setAssistantModel } from '../src/ai.js'
+import { createMagpieSettings } from './magpie.mjs'
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 
@@ -48,7 +49,7 @@ export function createStandaloneServer(options = {}) {
   const webRoot = options.webRoot ?? join(ROOT, 'dist', 'standalone')
   let currentPort = port
   let lock, runtime, mcp, address, startPromise, closePromise
-  let cliSettings, services, baseConfigs
+  let cliSettings, magpieSettings, services, baseConfigs
   let closing = false
   const shutdown = new AbortController()
   const policy = createRequestPolicy({ host, token, allowedHosts, getPort: () => currentPort })
@@ -105,6 +106,21 @@ export function createStandaloneServer(options = {}) {
   async function beforeRoute({ req, res, store, producer }) {
     const url = new URL(req.url || '/', 'http://local')
     const path = url.pathname
+    if (path === '/media-desk/magpie/models' && req.method === 'POST') {
+      json(res, 200, await magpieSettings.discover(await readJson(req)))
+      return true
+    }
+    if (path === '/media-desk/magpie' && ['GET', 'POST'].includes(req.method)) {
+      const result = req.method === 'POST' ? await magpieSettings.save(await readJson(req)) : magpieSettings.read()
+      if (req.method === 'POST') {
+        if (result.enabled) {
+          const updated = await runtime.settings.update({ assistant: { provider: 'magpie', model: result.model } })
+          setAssistantModel(updated.assistant)
+        } else await reconcileAssistant()
+      }
+      json(res, 200, result)
+      return true
+    }
     if (path === '/media-desk/cli/detect' && req.method === 'POST') {
       json(res, 200, cliSettings.detect(await readJson(req)))
       return true
@@ -152,11 +168,13 @@ export function createStandaloneServer(options = {}) {
     try {
       const supplied = options.modelConfig === undefined ? modelConfigFromEnv(env) : options.modelConfig
       baseConfigs = (Array.isArray(supplied) ? supplied : [supplied]).filter(Boolean)
-      const refreshServices = configs => {
-        services = createModelServices([...baseConfigs, ...configs], { fetchImpl: options.fetchImpl, signal: shutdown.signal })
+      const refreshServices = () => {
+        const configs = [...(magpieSettings?.configurations() ?? []), ...baseConfigs, ...(cliSettings?.configurations() ?? [])]
+        services = createModelServices(configs, { fetchImpl: options.fetchImpl, signal: shutdown.signal })
       }
       cliSettings = await createCliSettings({ dataDir: lock.dataDir, env, onChange: refreshServices })
-      refreshServices(cliSettings.configurations())
+      magpieSettings = await createMagpieSettings({ dataDir: lock.dataDir, env, onChange: refreshServices, fetchImpl: options.fetchImpl, signal: shutdown.signal })
+      refreshServices()
       const ctx = { get: name => name === 'connection' ? policy : services[name] }
       runtime = createDeskRuntime(ctx, {
         root: lock.dataDir,
@@ -215,6 +233,7 @@ export function createStandaloneServer(options = {}) {
         await runtime?.store.queue
         await runtime?.settings.queue
         await cliSettings?.close()
+        await magpieSettings?.close()
         await lock?.release()
       })()
     },

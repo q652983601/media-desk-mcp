@@ -2,6 +2,7 @@ import React from 'react'
 import { createPortal } from 'react-dom'
 import { loadDesk, setDesk, useDesk } from '../client/desk.js'
 import { Dialog } from '../client/ui.jsx'
+import { MagpieSettings } from './magpie-settings.jsx'
 
 async function request(body, action = '') {
   const response = await fetch(`/media-desk/cli${action}`, body === undefined ? {} : {
@@ -20,6 +21,7 @@ export function CliSettings() {
   const [data, setData] = React.useState(null)
   const [busy, setBusy] = React.useState(false)
   const [error, setError] = React.useState('')
+  const [tab, setTab] = React.useState('magpie')
 
   React.useEffect(() => {
     if (!settingsOpen) return
@@ -48,7 +50,7 @@ export function CliSettings() {
     return () => { cancelled = true }
   }, [open])
 
-  const close = () => { if (!busy) { setOpen(false); setDesk({ settingsOpen: true }) } }
+  const close = (completed = false) => { if (!busy || completed) { setOpen(false); setDesk({ settingsOpen: true }) } }
   const patch = (id, changes) => setData(value => ({ ...value, providers: value.providers.map(row => row.id === id ? { ...row, ...changes } : row) }))
   const providers = () => data.providers.map(row => ({ id: row.id, enabled: row.enabled, command: row.command, models: row.modelText.split(',').map(model => model.trim()).filter(Boolean) }))
   const refresh = async () => {
@@ -79,11 +81,15 @@ export function CliSettings() {
 
   return <>
     {anchor ? createPortal(<div className="md-cli-entry md-field">
-      <span>文字模型 · CLI</span>
-      <button type="button" className="md-btn" onClick={() => { setDesk({ settingsOpen: false }); setOpen(true) }}>配置 Codex、Claude、Kimi、MiniMax</button>
+      <span>文字模型</span>
+      <button type="button" className="md-btn" onClick={() => { setDesk({ settingsOpen: false }); setTab('magpie'); setOpen(true) }}>配置 Magpie 模型与 CLI</button>
     </div>, anchor) : null}
-    {open ? <div className="md-root md-cli-root"><Dialog title="CLI 工具配置" width={600} onClose={close}>
-      <form className="md-form" onSubmit={save}>
+    {open ? <div className="md-root md-cli-root"><Dialog title="模型配置" width={600} onClose={() => close()}>
+      <div className="md-presets md-provider-tabs" role="tablist" aria-label="模型接入方式">
+        <button type="button" role="tab" aria-selected={tab === 'magpie'} disabled={busy} className={tab === 'magpie' ? 'is-on' : ''} onClick={() => setTab('magpie')}>Magpie 网关</button>
+        <button type="button" role="tab" aria-selected={tab === 'cli'} disabled={busy} className={tab === 'cli' ? 'is-on' : ''} onClick={() => setTab('cli')}>本机 CLI</button>
+      </div>
+      {tab === 'magpie' ? <MagpieSettings onClose={close} onBusy={setBusy} /> : <form className="md-form" onSubmit={save}>
         <p className="md-muted md-cli-intro">CLI 在工作台所在电脑运行，使用该系统用户已有的登录或凭据配置。保存后立即应用，可在顶栏「助手模型」中切换。</p>
         {!data && !error ? <p role="status">正在检测 CLI…</p> : null}
         {data?.providers.map(row => <fieldset className="md-cli-provider" key={row.id} disabled={busy}>
@@ -111,7 +117,7 @@ export function CliSettings() {
           <button type="button" className="md-btn" onClick={close} disabled={busy}>取消</button>
           <button type="submit" className="md-btn is-primary" disabled={busy || !data}>{busy ? '正在保存…' : '保存并应用'}</button>
         </div>
-      </form>
+      </form>}
     </Dialog></div> : null}
   </>
 }

@@ -67,3 +67,5 @@ node scripts/build-standalone.mjs
 ## CLI 设置入口增量
 
 `standalone/cli-settings.jsx` 通过独立外壳在原设置表单中挂载 CLI 配置入口，专用配置弹窗复用原 Dialog、字段与按钮样式。原 client 和 assets 文件保持上述基线。四种 CLI 的配置、安装检测、保存错误与版本冲突反馈属于独立外壳新增功能，需随实际浏览器验证记录接收。
+
+设置入口现为「配置 Magpie 模型与 CLI」，Magpie 网关与本机 CLI 使用两个标签页。新增网关表单沿用同一主题和字段样式，client 与 assets 的 51 文件完整性检查继续覆盖原基线。

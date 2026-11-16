@@ -362,3 +362,10 @@ Restart DeepSeek Harness after changing `src/`.
 Open Settings and choose the Codex / Claude / Kimi / MiniMax configuration entry. Enable providers, enter executable paths and comma-separated model IDs, and save to apply immediately. The default model ID follows the CLI configuration. MiniMax uses the installed mmx executable and its text chat command. Installation detection checks the executable on the server machine. Account authentication and real model output still require verification on that machine.
 
 Saved configuration lives in cli.json in the service data directory and takes precedence over environment-variable seeds. Concurrent saves use revision checks. CLI configuration updates wait until active CLI generation has completed or been cancelled.
+
+
+## Magpie model provider
+
+Settings → Configure Magpie models and CLI opens a Magpie gateway tab. Use http://127.0.0.1:3425/v1 for a local gateway, refresh its model catalog, choose a text model or routing group, optionally select a supported reasoning effort, and save. The assistant and production workflow use this selection immediately.
+
+The integration reads GET /v1/models and reuses the OpenAI-compatible POST /v1/chat/completions bridge. Configuration and optional gateway credentials live in the private magpie.json data file. The browser receives a hasKey flag. A changed gateway origin requires entering its credentials again. Actual model generation requires separate verification.

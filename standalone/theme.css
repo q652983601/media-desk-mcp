@@ -16,3 +16,5 @@ body { --dsh-frame-leading-clearance: 0px; }
 .md-cli-path { overflow-wrap: anywhere; color: var(--ink3); font-size: 11px; }
 .md-cli-intro { margin: 0; font-size: 12px; line-height: 1.7; }
 .md-cli-error { font-size: 13px; color: var(--ink); }
+.md-provider-tabs { margin-bottom: 16px; }
+.md-magpie-fields { display: flex; flex-direction: column; gap: 14px; border: 0; padding: 0; margin: 0; min-width: 0; }
