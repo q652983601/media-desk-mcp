@@ -1,3 +1,13 @@
+# Independent runtime fork
+
+This repository is now **Media Desk MCP**. It runs the original web interface as
+a standalone Node service, exposes stdio and Streamable HTTP MCP, and offers
+optional Codex/Kimi CLI adapters. See the [current setup guide](README.md) and
+[MCP integration guide](docs/MCP.md). The upstream document below is retained
+for reference; its DSH installation instructions do not apply to this fork.
+
+---
+
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="docs/assets/hero-en-dark.webp">

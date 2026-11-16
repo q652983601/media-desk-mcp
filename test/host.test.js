@@ -194,6 +194,11 @@ test('assertPublicUrl 拒绝本机和内网地址', async () => {
   for (const url of ['http://localhost:3000', 'http://127.0.0.1', 'http://10.0.0.1', 'http://192.168.1.1', 'http://169.254.169.254/latest', 'http://[::1]/', 'http://[::ffff:127.0.0.1]/', 'file:///etc/passwd']) {
     await assert.rejects(assertPublicUrl(url), url)
   }
+  // Synthetic DNS answers exercise the same validator without touching DNS.
+  // A hostname with even one private answer must be rejected.
+  await assert.rejects(assertPublicUrl('https://fixture.example/', {
+    lookupImpl: async () => [{ address: '203.0.113.42', family: 4 }, { address: '127.0.0.1', family: 4 }],
+  }), /内网/)
 })
 
 test('harvest 解析元信息，并拦截跳转到内网', async () => {
@@ -712,10 +717,28 @@ test('Monid：短链只跟平台自己的域名，打开后不是主页就报错
   await assert.rejects(resolveAccount('https://evil.example/x', async () => assert.fail('不该请求')), /认不出/)
   await assert.rejects(resolveAccount('没有链接'), /没找到链接/)
   const hops = []
+  const dns = []
+  const lookupImpl = async (host, options) => {
+    dns.push(host)
+    assert.deepEqual(options, { all: true })
+    // TEST-NET-3 fixture, not an address used to reach b23.tv. fetch is fake too.
+    return [{ address: '203.0.113.42', family: 4 }]
+  }
   const fake = async (url) => { hops.push(url); return { headers: new Headers({ location: 'https://space.bilibili.com/42' }) } }
-  const account = await resolveAccount('看这个 https://b23.tv/abc', fake)
+  const account = await resolveAccount('看这个 https://b23.tv/abc', fake, { lookupImpl })
   assert.equal(account.id, '42')
   assert.equal(hops.length, 1)
+  assert.deepEqual(dns, ['b23.tv'])
+  await assert.rejects(resolveAccount('https://b23.tv/abc', async () => ({ headers: new Headers() }), { lookupImpl }), /不是账号主页/)
+  let requests = 0
+  await assert.rejects(resolveAccount('https://b23.tv/abc', async () => {
+    requests++
+    return { headers: new Headers({ location: 'http://127.0.0.1/admin' }) }
+  }, { lookupImpl }), /内网/)
+  assert.equal(requests, 1)
+  await assert.rejects(resolveAccount('https://b23.tv/abc', async () => assert.fail('private DNS must be rejected before fetch'), {
+    lookupImpl: async () => [{ address: '10.0.0.2', family: 4 }],
+  }), /内网/)
 })
 
 test('Monid：从 .cmd shim 找到真正的 CLI 入口（含转发壳）', async () => {

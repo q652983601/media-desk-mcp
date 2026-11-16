@@ -26,9 +26,9 @@ test('index.json：官方校验器接受，安装地址指向 npm 上的 dsh-med
   assert.match(marketInstallTarget(plugin.name, version).spec, /^dsh-media-desk@\d+\.\d+\.\d+$/)
 })
 
-test('index.json：列表里的版本和 engines 与 package.json 一致', () => {
+test('上游兼容夹具：index.json 的版本和 engines 与锁定的上游 package.json 一致', () => {
   const index = JSON.parse(readFileSync(new URL('../index.json', import.meta.url), 'utf8'))
-  const manifest = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'))
+  const manifest = JSON.parse(readFileSync(new URL('../docs/upstream-package.json', import.meta.url), 'utf8'))
   const plugin = index.plugins.find(entry => entry.name === manifest.name)
   assert.ok(plugin, 'index.json 里没有当前包名')
   assert.equal(plugin.versions[0].engines.dsh, manifest.engines.dsh)

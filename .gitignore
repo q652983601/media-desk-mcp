@@ -3,3 +3,10 @@ dist/
 *.tgz
 .DS_Store
 index.json.tmp
+
+# Local configuration and content never belong in source control.
+.env
+.env.*
+!.env.example
+media-desk-data/
+*.log

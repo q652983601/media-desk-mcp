@@ -123,7 +123,7 @@ export function parseAccountUrl(raw) {
 }
 
 /** 粘贴的内容可能是短链，跟着跳转找到主页。只跟这几个平台的短链，每一跳都检查不是内网。 */
-export async function resolveAccount(text, fetchImpl = fetch) {
+export async function resolveAccount(text, fetchImpl = fetch, { lookupImpl } = {}) {
   const first = findUrl(text)
   if (!first) throw Object.assign(new Error(tr('没找到链接，请贴账号主页的链接')), { status: 400 })
   const unsupported = () => Object.assign(new Error(tr('认不出这个主页。目前支持小红书、抖音、B 站、TikTok、Instagram 和 X 的账号主页链接，别的平台可以贴内容来提炼风格。')), { status: 400 })
@@ -133,7 +133,7 @@ export async function resolveAccount(text, fetchImpl = fetch) {
     if (account) return account
     const url = new URL(current)
     if (!SHORT_HOSTS.some(name => hostIs(url.hostname.toLowerCase(), name)) && hop === 0) throw unsupported()
-    await assertPublicUrl(current)
+    await assertPublicUrl(current, { lookupImpl })
     const res = await fetchImpl(current, { method: 'GET', redirect: 'manual', signal: AbortSignal.timeout(10_000), headers: { 'user-agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 Mobile/15E148' } })
     const location = res.headers.get('location')
     if (!location) break

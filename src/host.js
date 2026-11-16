@@ -317,8 +317,8 @@ async function route(ctx, store, desk, req, res) {
       const llm = ctx.get('llm')
       const providers = llm ? await llm.listProviders() : []
       const settled = await Promise.allSettled(providers.map(async p => ({
-        provider: p.id, name: p.name,
-        models: (await llm.listModels(p.id)).map(m => ({ id: m.id, name: m.name || m.id })),
+        provider: p.id, name: p.name, ...(p.agentStatus ? { agentStatus: p.agentStatus } : {}),
+        models: (await llm.listModels(p.id)).map(m => ({ id: m.id, name: m.name || m.id, ...(m.agentStatus ? { agentStatus: m.agentStatus } : {}) })),
       })))
       return json(res, 200, {
         providers: settled.filter(r => r.status === 'fulfilled').map(r => r.value).filter(p => p.models.length),
@@ -434,7 +434,7 @@ async function route(ctx, store, desk, req, res) {
     }
     case 'skills/export': {
       const state = await store.read()
-      const result = await exportSkill(state, dshHome())
+      const result = await exportSkill(state, desk.skillHome ?? dshHome())
       const next = await store.mutate('导出 Skill', (draft) => {
         applyOps(draft, draft.skills.filter(s => !s.sample && s.status === 'active').map(s => ({ op: 'update_skill', id: s.id, status: 'exported' })))
         return draft
@@ -460,39 +460,49 @@ export function requestRejection(ctx, req) {
 
 export const name = 'dsh-media-desk'
 
+/** The HTTP contract and business state are shared by the DSH and standalone hosts. */
+export function createDeskRuntime(ctx, options = {}) {
+  const store = options.store ?? new Store(options.root)
+  const settings = new Settings(store.root)
+  const producer = new Producer({
+    store, settings, callText: request => callModel(ctx, request),
+    ready: saved => imageReady(saved, Boolean(imageTool(ctx))),
+    generate: (image, prompt, request) => image.source === 'tool' ? generateToolImage(ctx, image, prompt, request) : generateImage(image, prompt, request),
+  })
+  const monid = createMonidRunner()
+  const desk = { settings, producer, monid, skillHome: options.skillHome, versionCheck: options.versionCheck ?? createVersionCheck() }
+  // 启动时恢复用户在工作台里选过的助手模型
+  const ready = settings.read().then(saved => setAssistantModel(saved.assistant))
+  ready.catch(() => {})
+  const handler = async (req, res) => {
+    try {
+      const rejection = requestRejection(ctx, req)
+      if (rejection) {
+        json(res, rejection, { error: tr('未授权') })
+        return
+      }
+      await ready
+      await withLang(req.headers['x-media-desk-lang'], async () => {
+        if (options.beforeRoute && await options.beforeRoute({ req, res, store, settings, producer, desk })) return
+        await route(ctx, store, desk, req, res)
+      })
+    } catch (err) {
+      if (res.headersSent) {
+        res.end()
+        return
+      }
+      json(res, err.status || 500, { error: err.message })
+    }
+  }
+  return { store, settings, producer, desk, handler, ready }
+}
+
 export default {
   inject: ['webServer', 'connection'],
   apply(ctx) {
-    const store = new Store()
-    const settings = new Settings(store.root)
-    const producer = new Producer({
-      store, settings, callText: options => callModel(ctx, options),
-      ready: saved => imageReady(saved, Boolean(imageTool(ctx))),
-      generate: (image, prompt, options) => image.source === 'tool' ? generateToolImage(ctx, image, prompt, options) : generateImage(image, prompt, options),
-    })
-    const monid = createMonidRunner()
-    const desk = { settings, producer, monid, versionCheck: createVersionCheck() }
-    // 启动时恢复用户在工作台里选过的助手模型
-    settings.read().then(saved => setAssistantModel(saved.assistant)).catch(() => {})
+    const runtime = createDeskRuntime(ctx)
     ctx.effect(() => ctx.webServer.register({
-      kind: 'prefix',
-      path: '/media-desk',
-      handler: async (req, res) => {
-        try {
-          const rejection = requestRejection(ctx, req)
-          if (rejection) {
-            json(res, rejection, { error: tr('未授权') })
-            return
-          }
-          await withLang(req.headers['x-media-desk-lang'], () => route(ctx, store, desk, req, res))
-        } catch (err) {
-          if (res.headersSent) {
-            res.end()
-            return
-          }
-          json(res, err.status || 500, { error: err.message })
-        }
-      },
+      kind: 'prefix', path: '/media-desk', handler: runtime.handler,
     }), 'dsh-media-desk: /media-desk routes')
   },
 }

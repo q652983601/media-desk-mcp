@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "media-desk": {
+      "command": "node",
+      "args": ["/ABSOLUTE/PATH/TO/media-desk/standalone/mcp.mjs"],
+      "env": {
+        "MEDIA_DESK_URL": "http://127.0.0.1:4319"
+      }
+    }
+  }
+}

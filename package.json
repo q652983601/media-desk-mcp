@@ -1,60 +1,70 @@
 {
-  "name": "dsh-media-desk",
-  "version": "2.7.2",
-  "description": "DeepSeek Harness 插件。一句话记灵感，一键成稿：口播脚本、标题、视频封面、配图和黑白线稿分镜。",
+  "name": "media-desk-mcp",
+  "version": "0.1.0",
+  "description": "Standalone self-media workspace with the original Media Desk frontend, MCP access, and optional Codex/Kimi runtimes.",
   "type": "module",
-  "main": "src/host.js",
+  "main": "standalone/server.mjs",
   "exports": {
-    ".": "./src/host.js",
-    "./client": "./dist/client.js",
-    "./cordis.patch.yml": "./cordis.patch.yml",
+    ".": "./standalone/server.mjs",
+    "./mcp": "./standalone/mcp-tools.mjs",
     "./package.json": "./package.json"
   },
-  "dsh": {
-    "bundle": {
-      "patch": "./cordis.patch.yml"
-    },
-    "client": {
-      "platform": "web",
-      "inject": [
-        "@deepseek-ai/dsh-client-runtime"
-      ]
-    }
-  },
   "engines": {
-    "node": ">=20",
-    "dsh": ">=0.2.1-rc.5 <0.3.0"
+    "node": ">=20.19.0"
   },
   "keywords": [
-    "dsh",
-    "deepseek-harness",
-    "dsh-plugin"
+    "mcp",
+    "content-creation",
+    "codex",
+    "kimi",
+    "media-workspace"
   ],
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/woniuniuniu/dsh-media-desk.git"
+    "url": "git+https://github.com/q652983601/media-desk-mcp.git"
   },
-  "homepage": "https://github.com/woniuniuniu/dsh-media-desk#readme",
-  "bugs": "https://github.com/woniuniuniu/dsh-media-desk/issues",
+  "homepage": "https://github.com/q652983601/media-desk-mcp#readme",
+  "bugs": "https://github.com/q652983601/media-desk-mcp/issues",
   "scripts": {
-    "build": "node scripts/build.mjs",
-    "watch": "node scripts/build.mjs --watch",
-    "test": "node --test test/*.test.js",
-    "assets": "python3 scripts/gen-assets.py",
-    "index": "node scripts/build-index.mjs",
+    "start": "node standalone/cli.mjs",
+    "mcp": "node standalone/mcp.mjs",
+    "build": "node scripts/build-standalone.mjs",
+    "build:standalone": "node scripts/build-standalone.mjs",
+    "test:browser": "node scripts/browser-smoke.mjs",
+    "test": "node scripts/test.mjs",
+    "verify:frontend": "node scripts/verify-frontend.mjs",
     "prepack": "npm run build"
   },
   "devDependencies": {
     "@deepseek-ai/dsh-plugin-market-index": "^0.2.1-rc.2",
-    "esbuild": "^0.25.10"
+    "@modelcontextprotocol/client": "2.4.0",
+    "esbuild": "^0.25.10",
+    "playwright": "1.62.1"
   },
   "files": [
     "src",
-    "dist",
+    "client",
+    "standalone",
+    "dist/standalone",
     "assets",
-    "cordis.patch.yml",
+    "scripts",
+    "docs",
+    "mcp.example.json",
     "README.md",
-    "LICENSE"
-  ]
+    "LICENSE",
+    "NOTICE.md"
+  ],
+  "dependencies": {
+    "@modelcontextprotocol/node": "2.1.2",
+    "@modelcontextprotocol/server": "2.4.0",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
+    "zod": "4.6.7"
+  },
+  "private": true,
+  "bin": {
+    "media-desk": "standalone/cli.mjs",
+    "media-desk-mcp": "standalone/mcp.mjs"
+  }
 }

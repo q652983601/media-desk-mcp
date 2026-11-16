@@ -147,6 +147,7 @@ export class Producer {
     this.ready = ready
     this.jobs = new Map()
     this.assets = new Set()
+    this.assetJobs = new Map()
   }
 
   isRunning(id) {
@@ -176,25 +177,36 @@ export class Producer {
   }
 
   async start(id, { withImages } = {}) {
-    if (this.jobs.has(id)) return false
-    const state = await this.store.read()
-    const item = state.items.find(row => row.id === id)
-    if (!item) throw Object.assign(new Error(tr('找不到这条灵感')), { status: 404 })
-    // 单次选择优先；没传就按设置里的默认值
-    const settings = await this.settings.read()
-    const draw = typeof withImages === 'boolean' ? withImages : settings.generateImages !== false
-    const job = { stage: 'brief', text: '', planText: '', controller: new AbortController(), withImages: draw }
+    if (this.jobs.has(id) || this.anyAssetActive(id)) return false
+    // Reserve synchronously: two HTTP/MCP callers must not both pass the guard
+    // while either is awaiting the Store or Settings.
+    const job = { stage: 'brief', text: '', planText: '', controller: new AbortController(), withImages }
     this.jobs.set(id, job)
-    await this.store.mutate('开始成稿', (draft) => {
-      const target = draft.items.find(row => row.id === id)
-      // 重新成稿后还存回原来的文件夹，不会每做一次多出一个
-      const { savedPath, savedHashes } = target.production ?? {}
-      target.production = { status: 'running', stage: 'brief', withImages: draw, startedAt: new Date().toISOString(), format: draftFormat(draft.draftFormat), title: target.title, article: '', cover: null, images: [], shots: [], ...(savedPath ? { savedPath, savedHashes } : {}) }
-      return draft
-    }, { undoable: false })
-    // 不等待：浏览器靠轮询拿进度
-    this.run(id, job).catch(() => {}).finally(() => this.jobs.delete(id))
-    return true
+    try {
+      const state = await this.store.read()
+      const item = state.items.find(row => row.id === id)
+      if (!item) throw Object.assign(new Error(tr('找不到这条灵感')), { status: 404 })
+      // 单次选择优先；没传就按设置里的默认值
+      const settings = await this.settings.read()
+      const draw = typeof withImages === 'boolean' ? withImages : settings.generateImages !== false
+      job.withImages = draw
+      await this.store.mutate('开始成稿', (draft) => {
+        const target = draft.items.find(row => row.id === id)
+        if (!target) throw Object.assign(new Error(tr('找不到这条灵感')), { status: 404 })
+        // 重新成稿后还存回原来的文件夹，不会每做一次多出一个
+        const { savedPath, savedHashes } = target.production ?? {}
+        target.production = { status: 'running', stage: 'brief', withImages: draw, startedAt: new Date().toISOString(), format: draftFormat(draft.draftFormat), title: target.title, article: '', cover: null, images: [], shots: [], ...(savedPath ? { savedPath, savedHashes } : {}) }
+        return draft
+      }, { undoable: false })
+      // 不等待：浏览器靠轮询拿进度
+      job.promise = this.run(id, job).catch(() => {}).finally(() => {
+        if (this.jobs.get(id) === job) this.jobs.delete(id)
+      })
+      return true
+    } catch (error) {
+      if (this.jobs.get(id) === job) this.jobs.delete(id)
+      throw error
+    }
   }
 
   async cancel(id) {
@@ -357,17 +369,33 @@ export class Producer {
 
   /** 单独重画一张。 */
   async regenerate(id, target) {
-    const settings = await this.settings.read()
-    if (!this.ready(settings)) throw Object.assign(new Error(tr('还没有接入生图模型')), { status: 400 })
-    if (!parseTarget(target)) throw Object.assign(new Error(tr('目标无效')), { status: 400 })
+    if (this.jobs.has(id)) throw Object.assign(new Error(tr('这条灵感正在成稿，请等它结束后再重画')), { status: 409 })
     const key = `${id}:${target}`
     if (this.assets.has(key)) return
-    const state = await this.store.read()
-    const production = state.items.find(row => row.id === id)?.production
-    if (!production || !assetAt(production, target)) throw Object.assign(new Error(tr('找不到这张图')), { status: 404 })
+    const job = { controller: new AbortController() }
     this.assets.add(key)
-    await this.patch(id, (next) => { assetAt(next, target).status = 'running' })
-    this.renderAsset(id, target, settings).catch(() => {}).finally(() => this.assets.delete(key))
+    this.assetJobs.set(key, job)
+    try {
+      const settings = await this.settings.read()
+      if (!this.ready(settings)) throw Object.assign(new Error(tr('还没有接入生图模型')), { status: 400 })
+      if (!parseTarget(target)) throw Object.assign(new Error(tr('目标无效')), { status: 400 })
+      const state = await this.store.read()
+      const production = state.items.find(row => row.id === id)?.production
+      if (!production || !assetAt(production, target)) throw Object.assign(new Error(tr('找不到这张图')), { status: 404 })
+      await this.patch(id, (next) => { assetAt(next, target).status = 'running' })
+      job.promise = this.renderAsset(id, target, settings, job.controller.signal).catch(() => {}).finally(() => {
+        if (this.assetJobs.get(key) === job) {
+          this.assets.delete(key)
+          this.assetJobs.delete(key)
+        }
+      })
+    } catch (error) {
+      if (this.assetJobs.get(key) === job) {
+        this.assets.delete(key)
+        this.assetJobs.delete(key)
+      }
+      throw error
+    }
   }
 
   /** Host 重启后，没人在跑的「进行中」不能一直转圈。 */

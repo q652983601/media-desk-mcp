@@ -1,6 +1,6 @@
 // 工作台设置。密钥和内容数据分开存放，文件权限 600，也不会返回给浏览器。
-import { chmod, readFile, rename, writeFile } from 'node:fs/promises'
-import { join } from 'node:path'
+import { chmod, mkdir, readFile, rename, writeFile } from 'node:fs/promises'
+import { dirname, join } from 'node:path'
 import { tr } from './i18n.js'
 
 const DEFAULTS = {
@@ -24,6 +24,7 @@ export class Settings {
   constructor(root) {
     this.file = join(root, 'settings.json')
     this.value = null
+    this.queue = Promise.resolve()
   }
 
   async read() {
@@ -39,7 +40,13 @@ export class Settings {
   }
 
   /** 空密钥表示不修改，clearKey 才会删除。 */
-  async update(patch) {
+  update(patch) {
+    const next = this.queue.then(() => this.updateNow(patch))
+    this.queue = next.catch(() => {})
+    return next
+  }
+
+  async updateNow(patch) {
     const current = await this.read()
     const next = structuredClone(current)
     const image = patch.image ?? {}
@@ -105,6 +112,7 @@ export class Settings {
     if (['auto', 'zh', 'en'].includes(patch.language)) next.language = patch.language
     if (patch.shotCount !== undefined) next.shotCount = clamp(patch.shotCount, 0, 12, current.shotCount)
     const tmp = `${this.file}.${process.pid}.tmp`
+    await mkdir(dirname(this.file), { recursive: true })
     await writeFile(tmp, JSON.stringify(next, null, 2), { mode: 0o600 })
     await chmod(tmp, 0o600)
     await rename(tmp, this.file)
